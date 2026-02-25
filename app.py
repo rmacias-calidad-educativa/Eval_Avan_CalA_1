@@ -135,6 +135,38 @@ def course_sort_key(value: str) -> tuple[int, str]:
     return (num, raw)
 
 
+def grade_display_label(value: str) -> str:
+    raw = str(value).strip()
+    normalized = strip_accents(raw).lower()
+    if normalized in GRADE_ORDER:
+        grade_num = GRADE_ORDER[normalized]
+        if grade_num < 100:
+            return f"{grade_num}°"
+    num_match = re.search(r"(\d+)", normalized)
+    if num_match:
+        return f"{int(num_match.group(1))}°"
+    return raw
+
+
+def shorten_text(value: str, max_len: int = 90) -> str:
+    raw = str(value).strip().replace("\n", " ")
+    raw = re.sub(r"\s+", " ", raw)
+    if len(raw) <= max_len:
+        return raw
+    return raw[: max_len - 1].rstrip() + "…"
+
+
+def compute_axis_bounds(series: pd.Series, min_floor: float = 20, padding: float = 3) -> list[float]:
+    clean = pd.Series(series).dropna().astype(float)
+    if clean.empty:
+        return [min_floor, 100]
+    lower = max(min_floor, float(np.floor(clean.min() - padding)))
+    upper = min(100.0, float(np.ceil(clean.max() + padding)))
+    if upper <= lower:
+        upper = min(100.0, lower + 5)
+    return [lower, upper]
+
+
 def clean_prueba_label(value: str) -> str:
     raw = str(value).strip()
     cleaned = re.sub(r"\s+\d+\s*°?$", "", raw).strip()
@@ -302,6 +334,7 @@ def item_metrics(df_scope: pd.DataFrame) -> pd.DataFrame:
             intentos=("Acierto", "size"),
             aciertos=("Acierto", "sum"),
             dificultad=("Acierto", "mean"),
+            Grado=("Grado", "first"),
         )
         .reset_index()
     )
@@ -378,6 +411,8 @@ def item_metrics(df_scope: pd.DataFrame) -> pd.DataFrame:
         .merge(distractor_health, on="QuestionId", how="left")
     )
 
+    out["Grado Etiqueta"] = out["Grado"].map(grade_display_label)
+    out["Grado Orden"] = out["Grado"].map(lambda x: grade_sort_key(x)[0])
     out["dificultad_pct"] = (out["dificultad"] * 100).round(2)
     out["d27"] = out["d27"].round(3)
     out["p_bis"] = out["p_bis"].round(3)
@@ -428,7 +463,7 @@ def item_metrics(df_scope: pd.DataFrame) -> pd.DataFrame:
     out["discriminacion_nivel"] = out["p_bis"].map(discrim_band)
     out["estado_item"] = out.apply(item_flag, axis=1)
 
-    return out.sort_values(["Prueba Base", "dificultad", "p_bis"], ascending=[True, True, False])
+    return out.sort_values(["Prueba Base", "Grado Orden", "dificultad", "p_bis"], ascending=[True, True, True, False])
 
 
 def psychometric_summary(item_df: pd.DataFrame) -> dict:
@@ -502,24 +537,86 @@ def benchmark_cards(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
     prueba_critica_pct = float(by_prueba.iloc[0]["Acierto"]) if not by_prueba.empty else 0.0
 
     c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.plotly_chart(make_indicator("Promedio Colombia", colombia_pct), use_container_width=True)
-    with c2:
-        st.plotly_chart(make_indicator(f"Promedio {focus_label}", focus_pct, delta=brecha, reference=colombia_pct), use_container_width=True)
-    with c3:
-        st.plotly_chart(make_indicator(f"Mejor sede: {best_sede}", best_sede_pct), use_container_width=True)
-    with c4:
-        st.plotly_chart(make_indicator(f"Prueba con menor acierto: {prueba_critica}", prueba_critica_pct), use_container_width=True)
+    c1.metric("Promedio Colombia", f"{colombia_pct:.1f}%")
+    c2.metric(f"Promedio {focus_label}", f"{focus_pct:.1f}%", delta=f"{brecha:+.2f} pp")
+    c3.metric("Mejor sede", f"{best_sede}", delta=f"{best_sede_pct:.1f}%")
+    c4.metric("Prueba con menor acierto", f"{prueba_critica}", delta=f"{prueba_critica_pct:.1f}%")
 
-    c5, c6, c7, c8 = st.columns(4)
-    c5.metric("Estudiantes en Colombia", f"{safe_nunique(df['ID Estudiante']):,}")
-    c6.metric(f"Estudiantes en {focus_label}", f"{safe_nunique(focus_df['ID Estudiante']):,}")
-    c7.metric("Sedes visibles", f"{safe_nunique(df['Sede']):,}")
-    c8.metric("Pruebas visibles", f"{safe_nunique(df['Prueba Base']):,}")
+
+def render_radar_cards(df: pd.DataFrame):
+    sedes = (
+        df[["Sede", "Sede Corta"]]
+        .dropna()
+        .drop_duplicates()
+        .sort_values("Sede Corta")
+    )
+    pruebas = sorted(df["Prueba Base"].dropna().unique().tolist())
+    if sedes.empty or not pruebas:
+        st.info("No hay suficientes datos para construir perfiles por sede.")
+        return
+
+    colombia = (
+        df.groupby("Prueba Base", dropna=False)["Acierto"]
+        .mean()
+        .mul(100)
+        .reindex(pruebas)
+        .fillna(0)
+    )
+    radar_cols = st.columns(2)
+    for idx, (_, row) in enumerate(sedes.iterrows()):
+        sede_value = row["Sede"]
+        sede_label = row["Sede Corta"]
+        sede_series = (
+            df.loc[df["Sede"] == sede_value]
+            .groupby("Prueba Base", dropna=False)["Acierto"]
+            .mean()
+            .mul(100)
+            .reindex(pruebas)
+            .fillna(0)
+        )
+        theta = pruebas + [pruebas[0]]
+        fig = go.Figure()
+        fig.add_trace(go.Scatterpolar(
+            r=colombia.tolist() + [float(colombia.iloc[0])],
+            theta=theta,
+            fill="toself",
+            name="Colombia",
+            line=dict(color="#334155"),
+            fillcolor="rgba(51, 65, 85, 0.15)",
+        ))
+        fig.add_trace(go.Scatterpolar(
+            r=sede_series.tolist() + [float(sede_series.iloc[0])],
+            theta=theta,
+            fill="toself",
+            name=sede_label,
+            line=dict(color="#0284c7"),
+            fillcolor="rgba(2, 132, 199, 0.25)",
+        ))
+        fig.update_layout(
+            title=f"Perfil de {sede_label} frente a Colombia",
+            polar=dict(radialaxis=dict(range=[0, 100], tickfont=dict(size=10))),
+            showlegend=True,
+            height=380,
+            margin=dict(l=30, r=30, t=60, b=20),
+        )
+        with radar_cols[idx % 2]:
+            st.plotly_chart(fig, use_container_width=True)
+        if idx % 2 == 1 and idx + 1 < len(sedes):
+            radar_cols = st.columns(2)
 
 
 def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
     st.subheader("Resultados globales")
+
+    with st.expander("Cómo leer esta pestaña", expanded=False):
+        st.markdown(
+            """
+            - **Promedio Colombia** es la referencia nacional del tablero con los filtros activos.
+            - **Promedio de la sede focal** muestra dónde está la sede seleccionada frente a esa referencia.
+            - Los **radares** comparan a cada sede contra Colombia usando las mismas pruebas, para detectar fortalezas y rezagos de un vistazo.
+            - Las barras y tablas ayudan a priorizar dónde conviene intervenir primero.
+            """
+        )
 
     benchmark_cards(df, focus_df, focus_label)
 
@@ -530,6 +627,7 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
         .reset_index(name="acierto_colombia_pct")
         .sort_values("acierto_colombia_pct", ascending=False)
     )
+    by_sede["destacado"] = np.where(by_sede["Sede Corta"] == focus_label, focus_label, "Otras sedes")
 
     c1, c2 = st.columns([1, 1])
     with c1:
@@ -537,18 +635,23 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
             by_sede,
             x="Sede Corta",
             y="acierto_colombia_pct",
+            color="destacado",
             title="% de acierto por sede",
-            text="acierto_colombia_pct"
+            text="acierto_colombia_pct",
+            color_discrete_map={focus_label: "#0284c7", "Otras sedes": "#94a3b8"},
         )
+        promedio_colombia = safe_pct(df["Acierto"])
         fig.add_hline(
-            y=safe_pct(df["Acierto"]),
+            y=promedio_colombia,
             line_dash="dash",
             annotation_text="Promedio Colombia",
             annotation_position="top left"
         )
-        ymax = max(100, float(by_sede["acierto_colombia_pct"].max()) + 3) if not by_sede.empty else 100
+        y_range = compute_axis_bounds(by_sede["acierto_colombia_pct"])
+        if promedio_colombia > y_range[1]:
+            y_range[1] = min(100.0, float(np.ceil(promedio_colombia + 3)))
         fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-        fig.update_layout(yaxis_title="% de acierto", xaxis_title="", yaxis_range=[20, ymax])
+        fig.update_layout(yaxis_title="% de acierto", xaxis_title="", yaxis_range=y_range, showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
@@ -563,16 +666,19 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
             "acierto_red_pct": "Colombia",
             "acierto_sede_pct": focus_label,
         })
-        fig = px.bar(
+        fig = px.line(
             melted,
             x="Prueba Base",
             y="Porcentaje",
             color="Serie",
-            barmode="group",
+            markers=True,
             title=f"% de acierto por prueba: {focus_label} vs Colombia"
         )
         fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
         st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("**Perfil por sede frente a Colombia**")
+    render_radar_cards(df)
 
     st.markdown("**Mapa de calor por sede y prueba**")
     heat = (
@@ -722,6 +828,15 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
 
 def show_pruebas_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
     st.subheader("Detalle por prueba")
+    with st.expander("Cómo leer esta pestaña", expanded=False):
+        st.markdown(
+            """
+            - Cada pestaña resume una prueba completa.
+            - La comparación principal siempre es **sede focal vs Colombia**.
+            - Si una competencia queda por debajo de Colombia, suele ser un buen punto de partida para planear refuerzos.
+            - La trayectoria por grado ayuda a detectar en qué momento cae o mejora el desempeño.
+            """
+        )
     pruebas = sorted(df["Prueba Base"].dropna().unique().tolist())
     prueba_tabs = st.tabs(pruebas)
 
@@ -744,17 +859,121 @@ def distractor_table(df_scope: pd.DataFrame, question_id: int | float) -> pd.Dat
     )
     total = out["selecciones"].sum()
     out["porcentaje"] = (out["selecciones"] / total * 100).round(2)
-    out["tipo"] = np.where(out["Acierto"] == 1, "Clave", "Distractor")
-    return out[["tipo", "Respuesta Limpia", "selecciones", "porcentaje"]]
+    out["tipo"] = np.where(out["Acierto"] == 1, "Respuesta correcta", "Distractor")
+    return out[["tipo", "Respuesta Limpia", "selecciones", "porcentaje", "Acierto"]]
+
+
+def build_question_bank(items_prueba: pd.DataFrame) -> pd.DataFrame:
+    if items_prueba.empty:
+        return items_prueba
+    ordered = items_prueba.copy()
+    ordered = ordered.sort_values(["Grado Orden", "Grado", "dificultad", "p_bis"], ascending=[True, True, True, False]).reset_index(drop=True)
+    ordered["orden_en_grado"] = ordered.groupby("Grado").cumcount() + 1
+    ordered["selector_label"] = ordered.apply(
+        lambda row: f"Pregunta {int(row['orden_en_grado'])} · Grado {row['Grado Etiqueta']}",
+        axis=1,
+    )
+    return ordered
+
+
+def build_option_comparison(question_id: int | float, colombia_df: pd.DataFrame, focus_df: pd.DataFrame) -> pd.DataFrame:
+    def _profile(frame: pd.DataFrame, pct_col: str) -> pd.DataFrame:
+        data = frame[frame["QuestionId"] == question_id].copy()
+        if data.empty:
+            return pd.DataFrame(columns=["Respuesta Limpia", "Acierto", pct_col])
+        out = (
+            data.groupby(["Respuesta Limpia", "Acierto"], dropna=False)
+            .size()
+            .reset_index(name="n")
+        )
+        total = out["n"].sum()
+        out[pct_col] = np.where(total > 0, out["n"] / total * 100, 0)
+        return out[["Respuesta Limpia", "Acierto", pct_col]]
+
+    colombia = _profile(colombia_df, "pct_colombia")
+    focus = _profile(focus_df, "pct_sede")
+    merged = colombia.merge(focus, on=["Respuesta Limpia", "Acierto"], how="outer").fillna(0)
+    if merged.empty:
+        return merged
+    merged["tipo"] = np.where(merged["Acierto"] == 1, "Respuesta correcta", "Distractor")
+    merged["color"] = np.where(merged["Acierto"] == 1, "#16a34a", "#94a3b8")
+    merged["Opción de respuesta"] = merged["Respuesta Limpia"].map(lambda x: shorten_text(x, 100))
+    merged["pico"] = merged[["pct_colombia", "pct_sede"]].max(axis=1)
+    merged = merged.sort_values(["Acierto", "pico"], ascending=[False, False]).reset_index(drop=True)
+    merged["pct_colombia"] = merged["pct_colombia"].round(2)
+    merged["pct_sede"] = merged["pct_sede"].round(2)
+    return merged
+
+
+def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Figure:
+    fig = go.Figure()
+    if option_comp.empty:
+        return fig
+
+    for _, row in option_comp.iterrows():
+        fig.add_trace(go.Scatter(
+            x=[row["pct_colombia"], row["pct_sede"]],
+            y=[row["Opción de respuesta"], row["Opción de respuesta"]],
+            mode="lines",
+            line=dict(color=row["color"], width=4),
+            hoverinfo="skip",
+            showlegend=False,
+        ))
+
+    fig.add_trace(go.Scatter(
+        x=option_comp["pct_colombia"],
+        y=option_comp["Opción de respuesta"],
+        mode="markers+text",
+        name="Colombia",
+        text=[f"{v:.1f}%" for v in option_comp["pct_colombia"]],
+        textposition="middle left",
+        marker=dict(
+            symbol="circle",
+            size=12,
+            color=option_comp["color"].tolist(),
+            line=dict(color="#0f172a", width=1),
+        ),
+    ))
+    fig.add_trace(go.Scatter(
+        x=option_comp["pct_sede"],
+        y=option_comp["Opción de respuesta"],
+        mode="markers+text",
+        name=focus_label,
+        text=[f"{v:.1f}%" for v in option_comp["pct_sede"]],
+        textposition="middle right",
+        marker=dict(
+            symbol="diamond",
+            size=12,
+            color=option_comp["color"].tolist(),
+            line=dict(color="#0f172a", width=1),
+        ),
+    ))
+    fig.update_layout(
+        title=f"Cómo se repartieron las respuestas: {focus_label} vs Colombia",
+        xaxis_title="% de estudiantes que marcó la opción",
+        yaxis_title="",
+        height=max(380, 90 + 70 * len(option_comp)),
+        margin=dict(l=40, r=20, t=60, b=20),
+    )
+    return fig
 
 
 def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
     st.subheader("Análisis de las respuestas")
+    with st.expander("Cómo leer esta pestaña", expanded=False):
+        st.markdown(
+            """
+            - Aquí el foco no es técnico, sino **pedagógico**: ver qué preguntas costaron más y qué errores fueron más frecuentes.
+            - Las preguntas están ordenadas por **grado** y por **dificultad** dentro de cada grado.
+            - En la comparación de opciones, **verde** indica la respuesta correcta y **gris** los distractores.
+            - **Círculo** representa Colombia y **rombo** la sede focal.
+            """
+        )
 
     scope_options = ["Colombia"]
     if focus_label != "Colombia":
         scope_options.append(focus_label)
-    scope = st.radio("Analizar preguntas en", scope_options, horizontal=True)
+    scope = st.radio("Ordenar preguntas según", scope_options, horizontal=True)
     selected = df if scope == "Colombia" else focus_df
 
     if selected.empty:
@@ -768,8 +987,10 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
 
     pruebas = sorted(items["Prueba Base"].dropna().unique().tolist())
     selected_prueba = st.selectbox("Prueba para analizar", pruebas)
-    items_prueba = items[items["Prueba Base"] == selected_prueba].copy()
+    items_prueba = build_question_bank(items[items["Prueba Base"] == selected_prueba].copy())
     scope_prueba_df = selected[selected["Prueba Base"] == selected_prueba].copy()
+    colombia_prueba_df = df[df["Prueba Base"] == selected_prueba].copy()
+    focus_prueba_df = focus_df[focus_df["Prueba Base"] == selected_prueba].copy()
 
     if items_prueba.empty:
         st.info("No hay preguntas para esta prueba con el filtro actual.")
@@ -780,15 +1001,84 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
     best_disc = items_prueba.sort_values(["p_bis", "d27"], ascending=[False, False]).head(1)
     worst_disc = items_prueba.sort_values(["p_bis", "d27"], ascending=[True, True]).head(1)
 
+    def _card_label(frame: pd.DataFrame) -> str:
+        if frame.empty:
+            return "Sin dato"
+        row = frame.iloc[0]
+        return f"{row['selector_label']}"
+
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Preguntas analizadas", f"{len(items_prueba):,}")
-    c2.metric("Más difícil", str(int(hardest.iloc[0]["QuestionId"])) if not hardest.empty else "Sin dato")
-    c3.metric("Más fácil", str(int(easiest.iloc[0]["QuestionId"])) if not easiest.empty else "Sin dato")
-    c4.metric("Mayor discriminación", str(int(best_disc.iloc[0]["QuestionId"])) if not best_disc.empty else "Sin dato")
-    c5.metric("Menor discriminación", str(int(worst_disc.iloc[0]["QuestionId"])) if not worst_disc.empty else "Sin dato")
+    c2.metric("Pregunta más difícil", _card_label(hardest))
+    c3.metric("Pregunta más fácil", _card_label(easiest))
+    c4.metric("Mayor discriminación", _card_label(best_disc))
+    c5.metric("Menor discriminación", _card_label(worst_disc))
+
+    difficult_table = items_prueba[["selector_label", "Competencia", "dificultad_pct", "p_bis", "d27"]].rename(columns={
+        "selector_label": "Pregunta",
+        "dificultad_pct": "% de acierto",
+        "p_bis": "Discriminación (p bis)",
+        "d27": "Discriminación (D27)",
+    })
+    st.markdown("**Preguntas ordenadas por grado y dificultad**")
+    st.dataframe(difficult_table, use_container_width=True, hide_index=True, height=420)
+
+    option_ids = items_prueba["QuestionId"].tolist()
+    label_map = dict(zip(items_prueba["QuestionId"], items_prueba["selector_label"]))
+    default_q = hardest.iloc[0]["QuestionId"] if not hardest.empty else option_ids[0]
+    selected_q = st.selectbox(
+        "Explorar una pregunta",
+        option_ids,
+        index=option_ids.index(default_q) if default_q in option_ids else 0,
+        format_func=lambda qid: label_map.get(qid, str(qid)),
+    )
+    item_row = items_prueba[items_prueba["QuestionId"] == selected_q].iloc[0]
+
+    st.markdown("### Lectura pedagógica de la pregunta")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("% de acierto", f"{item_row['dificultad_pct']:.2f}%")
+    m2.metric("Discriminación (p bis)", f"{item_row['p_bis']:.3f}" if pd.notna(item_row["p_bis"]) else "Sin dato")
+    m3.metric("Discriminación (D27)", f"{item_row['d27']:.3f}" if pd.notna(item_row["d27"]) else "Sin dato")
+    m4.metric("Grado", str(item_row["Grado Etiqueta"]))
+
+    st.markdown(f"**Competencia:** {item_row['Competencia']}")
+    st.markdown(f"**Pregunta:** {item_row['Pregunta']}")
+
+    option_comp = build_option_comparison(selected_q, colombia_prueba_df, focus_prueba_df if not focus_prueba_df.empty else colombia_prueba_df)
+    if option_comp.empty:
+        st.info("No hay opciones de respuesta para esta pregunta con el filtro actual.")
+        return
+
+    st.caption("Verde = respuesta correcta | Gris = distractores | Círculo = Colombia | Rombo = sede focal")
+    st.plotly_chart(option_dumbbell_chart(option_comp, focus_label), use_container_width=True)
+
+    display_table = option_comp[["Opción de respuesta", "pct_colombia", "pct_sede", "tipo"]].rename(columns={
+        "pct_colombia": "% que la marcó en Colombia",
+        "pct_sede": f"% que la marcó en {focus_label}",
+        "tipo": "Tipo de opción",
+    })
+    st.dataframe(display_table, use_container_width=True, hide_index=True)
+
+    st.markdown("**Sugerencia de lectura docente**")
+    notes = []
+    if item_row["dificultad"] < 0.30:
+        notes.append("Es una pregunta exigente. Conviene revisar si el contenido ya fue trabajado con suficiente profundidad o si el enunciado requiere ajuste.")
+    elif item_row["dificultad"] > 0.80:
+        notes.append("Es una pregunta accesible. Sirve para verificar aprendizajes básicos, aunque suele diferenciar menos entre estudiantes.")
+    else:
+        notes.append("Tiene una dificultad equilibrada y ayuda a observar diferencias reales de comprensión.")
+    if pd.notna(item_row["p_bis"]) and item_row["p_bis"] < 0:
+        notes.append("La discriminación negativa es una alerta. Vale la pena revisar la clave, el enunciado o la alineación con lo enseñado.")
+    elif pd.notna(item_row["p_bis"]) and item_row["p_bis"] >= 0.20:
+        notes.append("La pregunta diferencia razonablemente entre niveles de desempeño.")
+    strongest_distractor = option_comp[option_comp["tipo"] == "Distractor"]
+    if not strongest_distractor.empty and strongest_distractor.iloc[0]["pct_sede"] >= 25:
+        notes.append("El distractor principal está capturando muchas respuestas en la sede focal. Puede revelar una confusión frecuente que merece retroalimentación explícita.")
+    for note in notes:
+        st.write(f"- {note}")
 
     scatter = items_prueba.copy()
-    scatter["item_label"] = scatter["QuestionId"].astype(str)
+    scatter["item_label"] = scatter["selector_label"]
     fig = px.scatter(
         scatter,
         x="dificultad",
@@ -806,90 +1096,17 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    difficult_table = items_prueba.nsmallest(15, "dificultad")[["QuestionId", "Competencia", "dificultad_pct", "p_bis", "d27"]]
-    difficult_table = difficult_table.rename(columns={
-        "QuestionId": "Pregunta",
-        "dificultad_pct": "% de acierto",
-        "p_bis": "Discriminación (p bis)",
-        "d27": "Discriminación (D27)",
-    })
-    st.markdown("**Preguntas más difíciles**")
-    st.dataframe(difficult_table, use_container_width=True, hide_index=True, height=340)
-
-    disc_table = items_prueba.sort_values(["p_bis", "d27"], ascending=False).head(15)[["QuestionId", "Competencia", "dificultad_pct", "p_bis", "d27"]]
-    disc_table = disc_table.rename(columns={
-        "QuestionId": "Pregunta",
-        "dificultad_pct": "% de acierto",
-        "p_bis": "Discriminación (p bis)",
-        "d27": "Discriminación (D27)",
-    })
-    st.markdown("**Preguntas que mejor diferencian desempeños**")
-    st.dataframe(disc_table, use_container_width=True, hide_index=True, height=340)
-
-    item_options = items_prueba["QuestionId"].tolist()
-    default_q = int(hardest.iloc[0]["QuestionId"]) if not hardest.empty else int(item_options[0])
-    selected_q = st.selectbox("Explorar una pregunta", item_options, index=item_options.index(default_q) if default_q in item_options else 0)
-    item_row = items_prueba[items_prueba["QuestionId"] == selected_q].iloc[0]
-
-    st.markdown("### Lectura pedagógica de la pregunta")
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("% de acierto", f"{item_row['dificultad_pct']:.2f}%")
-    m2.metric("Discriminación (p bis)", f"{item_row['p_bis']:.3f}" if pd.notna(item_row["p_bis"]) else "Sin dato")
-    m3.metric("Discriminación (D27)", f"{item_row['d27']:.3f}" if pd.notna(item_row["d27"]) else "Sin dato")
-    m4.metric("Distractor más marcado", f"{item_row['pct_distractor_top']:.2f}%" if pd.notna(item_row["pct_distractor_top"]) else "0.00%")
-
-    st.markdown(f"**Competencia:** {item_row['Competencia']}")
-    st.markdown(f"**Pregunta:** {item_row['Pregunta']}")
-
-    distract = distractor_table(scope_prueba_df, selected_q)
-    if distract.empty:
-        st.info("No hay opciones de respuesta para esta pregunta con el filtro actual.")
-        return
-
-    fig = px.bar(
-        distract,
-        x="Respuesta Limpia",
-        y="porcentaje",
-        color="tipo",
-        title="Opciones de respuesta más marcadas por los estudiantes",
-        text="porcentaje"
-    )
-    fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-    fig.update_layout(xaxis_title="", yaxis_title="% de selecciones")
-    st.plotly_chart(fig, use_container_width=True)
-
-    wrong = distract[distract["tipo"] == "Distractor"].copy()
-    st.markdown("**Distractores que más atrajeron respuestas**")
-    if wrong.empty:
-        st.success("No hay distractores registrados para esta pregunta.")
-    else:
-        st.dataframe(wrong, use_container_width=True, hide_index=True, height=300)
-        top = wrong.iloc[0]
-        st.info(
-            f"La opción distractora más fuerte capturó {top['porcentaje']:.2f}% de las respuestas. "
-            f"Esto puede señalar una confusión frecuente y útil para orientar la retroalimentación docente."
-        )
-
-    st.markdown("**Sugerencia de lectura docente**")
-    notes = []
-    if item_row["dificultad"] < 0.30:
-        notes.append("Es una pregunta exigente. Conviene revisar si el contenido ya fue trabajado con suficiente profundidad o si el enunciado requiere ajuste.")
-    elif item_row["dificultad"] > 0.80:
-        notes.append("Es una pregunta accesible. Sirve para verificar aprendizajes básicos, aunque suele diferenciar menos entre estudiantes.")
-    else:
-        notes.append("Tiene una dificultad equilibrada y ayuda a observar diferencias reales de comprensión.")
-    if pd.notna(item_row["p_bis"]) and item_row["p_bis"] < 0:
-        notes.append("La discriminación negativa es una alerta. Vale la pena revisar la clave, el enunciado o la alineación con lo enseñado.")
-    elif pd.notna(item_row["p_bis"]) and item_row["p_bis"] >= 0.20:
-        notes.append("La pregunta diferencia razonablemente entre niveles de desempeño.")
-    if pd.notna(item_row["pct_distractor_top"]) and item_row["pct_distractor_top"] >= 25:
-        notes.append("El distractor principal es muy atractivo. Puede revelar un error conceptual muy extendido que merece refuerzo en clase.")
-    for note in notes:
-        st.write(f"- {note}")
-
 
 def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
     st.subheader("Análisis de antigüedad del estudiante")
+    with st.expander("Cómo leer esta pestaña", expanded=False):
+        st.markdown(
+            """
+            - Esta vista muestra si el desempeño cambia según los años de permanencia del estudiante.
+            - La línea compara la sede focal con Colombia.
+            - La brecha ayuda a ver si la ventaja o rezago crece, se mantiene o se corrige con el tiempo.
+            """
+        )
 
     net = add_benchmark(df.dropna(subset=["Antiguedad"]), focus_df.dropna(subset=["Antiguedad"]), "Antiguedad")
     if net.empty:
@@ -1039,11 +1256,6 @@ def apply_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
     pruebas = sorted(df["Prueba Base"].dropna().unique().tolist())
     selected_pruebas = st.sidebar.multiselect("Prueba", pruebas, default=pruebas)
 
-    with st.sidebar.expander("Cambiar archivo", expanded=False):
-        uploaded_file = st.file_uploader("Cargar otro CSV o Excel", type=["csv", "xlsx", "xls"], key="upload_new_file")
-        st.caption("Si no cargas nada, se usa el archivo del repositorio.")
-    st.session_state["uploaded_file_obj"] = uploaded_file
-
     filtered = df.copy()
     if selected_grades:
         filtered = filtered[filtered["Grado"].isin(selected_grades)]
@@ -1068,18 +1280,11 @@ def main():
     st.caption("Tablero pedagógico para comparar el desempeño de una sede frente a Colombia y leer mejor lo que cuentan las preguntas.")
 
     local_file = load_default_file_if_exists()
-
-    uploaded = st.session_state.get("uploaded_file_obj")
-    if uploaded is not None:
-        source_label = f"Archivo cargado: {uploaded.name}"
-        raw = read_uploaded_file(uploaded)
-    elif local_file is not None:
-        source_label = f"Archivo del repositorio: {local_file.relative_to(BASE_DIR) if local_file.is_relative_to(BASE_DIR) else local_file}"
-        raw = read_dataframe_from_path(str(local_file))
-    else:
+    if local_file is None:
         st.error("No encontré el archivo base. Verifica que exista en data/EvaluarParaAvanzar_CalA.xlsx")
         st.stop()
 
+    raw = read_dataframe_from_path(str(local_file))
     raw = normalize_columns(raw)
     missing = validate_columns(raw)
     if missing:
@@ -1087,19 +1292,6 @@ def main():
         st.stop()
 
     df = prepare_data(raw)
-
-    st.success(source_label)
-
-    with st.expander("Qué aporta este tablero", expanded=False):
-        st.markdown(
-            """
-            - Resume el desempeño global de Colombia y de una sede focal.
-            - Compara sedes, pruebas, grados, competencias y antigüedad.
-            - Muestra qué preguntas fueron más difíciles, más fáciles y qué opciones atrajeron más respuestas.
-            - Prioriza una lectura pedagógica útil para docentes y directivos.
-            """
-        )
-
     filtered, focus_df, focus_label = apply_filters(df)
 
     if filtered.empty:

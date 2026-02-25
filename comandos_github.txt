@@ -1,0 +1,27 @@
+# 1) Crear carpeta local y entrar
+mkdir visualizador_academico
+cd visualizador_academico
+
+# 2) Copiar dentro de esta carpeta:
+# - app.py
+# - requirements.txt
+# - carpeta .streamlit/
+# - carpeta data/ con EvaluarParaAvanzar_CalA.xlsx
+
+# 3) Inicializar git
+git init
+
+# 4) Agregar todos los archivos
+git add .
+
+# 5) Primer commit
+git commit -m "Primer commit del visualizador academico"
+
+# 6) Renombrar rama principal
+git branch -M main
+
+# 7) Conectar con tu repositorio de GitHub
+git remote add origin https://github.com/TU_USUARIO/TU_REPOSITORIO.git
+
+# 8) Subir a GitHub
+git push -u origin main

@@ -1,10 +1,11 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from pathlib import Path
 
-st.set_page_config(page_title="Visualizador académico", layout="wide")
+st.set_page_config(page_title="Visualizador agregado académico", layout="wide")
 
 REQUIRED_COLUMNS = [
     "Sede", "ID Estudiante", "Edad Estudiante", "Genero", "Grado", "Curso",
@@ -21,19 +22,25 @@ COLUMN_ALIASES = {
     "answerid": "AnswerId",
 }
 
+BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATA_CANDIDATES = [
+    BASE_DIR / "data" / "EvaluarParaAvanzar_CalA.xlsx",
+    BASE_DIR / "EvaluarParaAvanzar_CalA.xlsx",
     Path("data/EvaluarParaAvanzar_CalA.xlsx"),
     Path("EvaluarParaAvanzar_CalA.xlsx"),
 ]
 
+
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    cleaned = []
-    for c in df.columns.tolist():
+    renamed = []
+    for c in df.columns:
         c2 = str(c).strip()
         key = c2.lower()
-        cleaned.append(COLUMN_ALIASES.get(key, c2))
-    df.columns = cleaned
-    return df
+        renamed.append(COLUMN_ALIASES.get(key, c2))
+    out = df.copy()
+    out.columns = renamed
+    return out
+
 
 @st.cache_data(show_spinner=False)
 def read_dataframe_from_path(path_str: str) -> pd.DataFrame:
@@ -50,6 +57,7 @@ def read_dataframe_from_path(path_str: str) -> pd.DataFrame:
     if suffix in [".xlsx", ".xls"]:
         return pd.read_excel(path)
     raise ValueError("Formato no soportado. Usa CSV o Excel.")
+
 
 @st.cache_data(show_spinner=False)
 def read_uploaded_file(uploaded_file) -> pd.DataFrame:
@@ -70,430 +78,392 @@ def read_uploaded_file(uploaded_file) -> pd.DataFrame:
         return pd.read_excel(uploaded_file)
     raise ValueError("Formato no soportado. Usa CSV o Excel.")
 
-def validate_columns(df: pd.DataFrame) -> list[str]:
-    return [c for c in REQUIRED_COLUMNS if c not in df.columns]
 
-def clean_data(df: pd.DataFrame, deduplicate: bool = True) -> tuple[pd.DataFrame, int]:
+@st.cache_data(show_spinner=False)
+def prepare_data(raw: pd.DataFrame) -> pd.DataFrame:
+    df = normalize_columns(raw)
+
+    missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+    if missing:
+        raise ValueError(f"Faltan columnas obligatorias: {', '.join(missing)}")
+
     df = df.copy()
-    df = normalize_columns(df)
+    df["Acierto"] = pd.to_numeric(df["Acierto"], errors="coerce")
+    df["Acierto"] = df["Acierto"].clip(lower=0, upper=1)
 
-    if "Acierto" in df.columns:
-        df["Acierto"] = pd.to_numeric(df["Acierto"], errors="coerce").fillna(0)
-        df["Acierto"] = df["Acierto"].clip(lower=0, upper=1)
-
-    for col in ["Edad Estudiante", "Antiguedad", "QuestionId", "AnswerId"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+    numeric_cols = ["Edad Estudiante", "Antiguedad", "QuestionId", "AnswerId"]
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
     text_cols = ["Sede", "Genero", "Grado", "Curso", "Prueba", "Pregunta", "Respuesta", "Competencia"]
     for col in text_cols:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.strip()
-            df.loc[df[col].isin(["nan", "None", ""]), col] = np.nan
+        df[col] = df[col].astype("string").str.strip()
+        df.loc[df[col].isin(["", "nan", "None"]), col] = pd.NA
 
-    duplicate_count = 0
-    key_cols = [c for c in ["ID Estudiante", "Prueba", "QuestionId"] if c in df.columns]
-    if deduplicate and len(key_cols) == 3:
-        duplicate_count = int(df.duplicated(subset=key_cols).sum())
-        df = df.drop_duplicates(subset=key_cols, keep="last")
+    return df
 
-    return df, duplicate_count
 
-def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
-    filtered = df.copy()
+@st.cache_data(show_spinner=False)
+def compute_aggregates(df: pd.DataFrame) -> dict:
+    out = {}
 
-    st.sidebar.header("Filtros")
-    for col in ["Sede", "Genero", "Grado", "Curso", "Prueba", "Competencia"]:
-        if col in filtered.columns:
-            options = sorted([x for x in filtered[col].dropna().unique().tolist()])
-            if options:
-                selected = st.sidebar.multiselect(col, options, default=options)
-                filtered = filtered[filtered[col].isin(selected)]
+    out["global_kpis"] = {
+        "filas": int(len(df)),
+        "estudiantes": int(df["ID Estudiante"].nunique(dropna=True)),
+        "preguntas": int(df["QuestionId"].nunique(dropna=True)),
+        "pruebas": int(df["Prueba"].nunique(dropna=True)),
+        "acierto_red": float(df["Acierto"].mean()) if len(df) else np.nan,
+    }
 
-    if "Edad Estudiante" in filtered.columns and filtered["Edad Estudiante"].notna().any():
-        min_age = int(filtered["Edad Estudiante"].min())
-        max_age = int(filtered["Edad Estudiante"].max())
-        age_range = st.sidebar.slider("Edad", min_age, max_age, (min_age, max_age))
-        filtered = filtered[filtered["Edad Estudiante"].fillna(min_age).between(age_range[0], age_range[1])]
-
-    if "Antiguedad" in filtered.columns and filtered["Antiguedad"].notna().any():
-        min_ant = int(filtered["Antiguedad"].min())
-        max_ant = int(filtered["Antiguedad"].max())
-        ant_range = st.sidebar.slider("Antigüedad", min_ant, max_ant, (min_ant, max_ant))
-        filtered = filtered[filtered["Antiguedad"].fillna(min_ant).between(ant_range[0], ant_range[1])]
-
-    return filtered
-
-def build_student_summary(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return pd.DataFrame()
-
-    g = (
-        df.groupby("ID Estudiante", dropna=False)
+    out["by_sede"] = (
+        df.groupby("Sede", dropna=False)
         .agg(
-            respuestas=("Acierto", "size"),
-            aciertos=("Acierto", "sum"),
-            promedio=("Acierto", "mean"),
-            sede=("Sede", "first"),
-            grado=("Grado", "first"),
-            curso=("Curso", "first"),
-            genero=("Genero", "first"),
-            edad=("Edad Estudiante", "first"),
-            antiguedad=("Antiguedad", "first"),
+            registros=("Acierto", "size"),
+            estudiantes=("ID Estudiante", pd.Series.nunique),
+            pruebas=("Prueba", pd.Series.nunique),
+            acierto=("Acierto", "mean"),
         )
         .reset_index()
+        .sort_values("acierto", ascending=False)
     )
-    g["porcentaje"] = (g["promedio"] * 100).round(2)
-    g["riesgo"] = pd.cut(
-        g["porcentaje"],
-        bins=[-0.1, 39.99, 59.99, 79.99, 100.0],
-        labels=["Alto", "Medio", "Bajo", "Sobresaliente"]
-    )
-    return g.sort_values("porcentaje", ascending=False)
+    out["by_sede"]["acierto_pct"] = (out["by_sede"]["acierto"] * 100).round(2)
 
-def build_question_summary(df: pd.DataFrame, student_summary: pd.DataFrame) -> pd.DataFrame:
-    if df.empty or student_summary.empty:
-        return pd.DataFrame()
-
-    student_perf = student_summary[["ID Estudiante", "promedio"]].copy()
-    q1 = student_perf["promedio"].quantile(0.25)
-    q3 = student_perf["promedio"].quantile(0.75)
-
-    merged = df.merge(student_perf, on="ID Estudiante", how="left")
-    merged["segmento"] = np.where(
-        merged["promedio"] >= q3,
-        "Alto",
-        np.where(merged["promedio"] <= q1, "Bajo", "Medio")
-    )
-
-    base = (
-        merged.groupby(["QuestionId", "Pregunta", "Prueba", "Competencia"], dropna=False)
+    out["by_prueba"] = (
+        df.groupby("Prueba", dropna=False)
         .agg(
-            intentos=("Acierto", "size"),
-            dificultad=("Acierto", "mean"),
+            registros=("Acierto", "size"),
+            estudiantes=("ID Estudiante", pd.Series.nunique),
+            sedes=("Sede", pd.Series.nunique),
+            acierto=("Acierto", "mean"),
         )
         .reset_index()
+        .sort_values("acierto", ascending=False)
     )
+    out["by_prueba"]["acierto_pct"] = (out["by_prueba"]["acierto"] * 100).round(2)
 
-    seg = (
-        merged.groupby(["QuestionId", "segmento"], dropna=False)["Acierto"]
-        .mean()
-        .unstack(fill_value=np.nan)
-        .reset_index()
-    )
-
-    out = base.merge(seg, on="QuestionId", how="left")
-    out["discriminacion_simple"] = out.get("Alto", np.nan) - out.get("Bajo", np.nan)
-    out["dificultad_pct"] = (out["dificultad"] * 100).round(2)
-    out["discriminacion_simple"] = out["discriminacion_simple"].round(3)
-    return out.sort_values(["dificultad", "intentos"], ascending=[True, False])
-
-def kpi_block(df: pd.DataFrame):
-    n_rows = len(df)
-    n_students = df["ID Estudiante"].nunique() if "ID Estudiante" in df.columns else 0
-    accuracy = df["Acierto"].mean() if not df.empty else 0
-    n_questions = df["QuestionId"].nunique() if "QuestionId" in df.columns else 0
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Filas analizadas", f"{n_rows:,}")
-    c2.metric("Estudiantes", f"{n_students:,}")
-    c3.metric("Preguntas", f"{n_questions:,}")
-    c4.metric("% acierto", f"{accuracy * 100:,.2f}%")
-
-def show_general_tab(df: pd.DataFrame, student_summary: pd.DataFrame):
-    st.subheader("Panorama general")
-
-    if df.empty:
-        st.warning("No hay datos con los filtros seleccionados.")
-        return
-
-    kpi_block(df)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        by_prueba = (
-            df.groupby("Prueba", dropna=False)["Acierto"]
-            .mean()
-            .mul(100)
-            .round(2)
-            .reset_index()
-            .sort_values("Acierto", ascending=False)
-        )
-        fig = px.bar(by_prueba, x="Prueba", y="Acierto", title="% de acierto por prueba")
-        st.plotly_chart(fig, use_container_width=True)
-
-    with c2:
-        by_comp = (
-            df.groupby("Competencia", dropna=False)["Acierto"]
-            .mean()
-            .mul(100)
-            .round(2)
-            .reset_index()
-            .sort_values("Acierto", ascending=False)
-        )
-        fig = px.bar(by_comp, x="Competencia", y="Acierto", title="% de acierto por competencia")
-        st.plotly_chart(fig, use_container_width=True)
-
-    by_sede = (
-        df.groupby("Sede", dropna=False)["Acierto"]
-        .mean()
-        .mul(100)
-        .round(2)
-        .reset_index()
-        .sort_values("Acierto", ascending=False)
-    )
-    fig = px.bar(by_sede, x="Sede", y="Acierto", title="% de acierto por sede")
-    st.plotly_chart(fig, use_container_width=True)
-
-    heat = (
-        df.groupby(["Grado", "Competencia"], dropna=False)["Acierto"]
-        .mean()
-        .mul(100)
-        .round(1)
-        .reset_index()
-        .pivot(index="Grado", columns="Competencia", values="Acierto")
-    )
-    st.markdown("**Matriz de desempeño: grado x competencia**")
-    st.dataframe(heat, use_container_width=True)
-
-    st.markdown("**Distribución del desempeño estudiantil**")
-    fig = px.histogram(student_summary, x="porcentaje", nbins=20, title="Distribución del % de acierto por estudiante")
-    st.plotly_chart(fig, use_container_width=True)
-
-def show_students_tab(df: pd.DataFrame, student_summary: pd.DataFrame):
-    st.subheader("Exploración por estudiante")
-
-    if student_summary.empty:
-        st.warning("No hay estudiantes para mostrar.")
-        return
-
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        selected = st.selectbox("Selecciona un estudiante", student_summary["ID Estudiante"].dropna().tolist())
-    with c2:
-        sort_mode = st.selectbox("Orden tabla", ["Menor desempeño", "Mayor desempeño"])
-
-    ranking = student_summary.sort_values("porcentaje", ascending=(sort_mode == "Menor desempeño"))
-    st.markdown("**Ranking de estudiantes (filtrado)**")
-    st.dataframe(
-        ranking[["ID Estudiante", "sede", "grado", "curso", "porcentaje", "riesgo", "respuestas"]].head(100),
-        use_container_width=True,
-        height=320
-    )
-
-    one = student_summary[student_summary["ID Estudiante"] == selected].iloc[0]
-    df_student = df[df["ID Estudiante"] == selected].copy()
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Acierto", f"{one['porcentaje']:.2f}%")
-    c2.metric("Respuestas", int(one["respuestas"]))
-    c3.metric("Grado / Curso", f"{one['grado']} / {one['curso']}")
-    c4.metric("Riesgo", str(one["riesgo"]))
-
-    c1, c2 = st.columns(2)
-    with c1:
-        by_prueba = (
-            df_student.groupby("Prueba", dropna=False)["Acierto"]
-            .mean()
-            .mul(100)
-            .round(2)
-            .reset_index()
-            .sort_values("Acierto", ascending=False)
-        )
-        fig = px.bar(by_prueba, x="Prueba", y="Acierto", title="% de acierto del estudiante por prueba")
-        st.plotly_chart(fig, use_container_width=True)
-
-    with c2:
-        by_comp = (
-            df_student.groupby("Competencia", dropna=False)["Acierto"]
-            .mean()
-            .mul(100)
-            .round(2)
-            .reset_index()
-            .sort_values("Acierto", ascending=False)
-        )
-        fig = px.bar(by_comp, x="Competencia", y="Acierto", title="% de acierto del estudiante por competencia")
-        st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("**Preguntas incorrectas del estudiante**")
-    wrong = df_student[df_student["Acierto"] == 0][["Prueba", "QuestionId", "Competencia", "Pregunta", "Respuesta"]]
-    st.dataframe(wrong, use_container_width=True, height=350)
-
-def show_questions_tab(df: pd.DataFrame, question_summary: pd.DataFrame):
-    st.subheader("Análisis por pregunta")
-
-    if question_summary.empty:
-        st.warning("No hay preguntas para mostrar.")
-        return
-
-    c1, c2 = st.columns(2)
-    with c1:
-        hardest = question_summary.nsmallest(20, "dificultad")[["QuestionId", "Prueba", "Competencia", "dificultad_pct", "intentos"]]
-        st.markdown("**Preguntas más difíciles**")
-        st.dataframe(hardest, use_container_width=True, height=350)
-
-    with c2:
-        best_disc = question_summary.sort_values("discriminacion_simple", ascending=False).head(20)
-        best_disc = best_disc[["QuestionId", "Prueba", "Competencia", "discriminacion_simple", "intentos"]]
-        st.markdown("**Preguntas con mejor discriminación**")
-        st.dataframe(best_disc, use_container_width=True, height=350)
-
-    selected_q = st.selectbox("Selecciona una pregunta", question_summary["QuestionId"].dropna().tolist())
-    q_meta = question_summary[question_summary["QuestionId"] == selected_q].iloc[0]
-
-    st.markdown(f"**Prueba:** {q_meta['Prueba']}")
-    st.markdown(f"**Competencia:** {q_meta['Competencia']}")
-    st.markdown(f"**Dificultad:** {q_meta['dificultad_pct']:.2f}%")
-    if pd.notna(q_meta.get("discriminacion_simple", np.nan)):
-        st.markdown(f"**Discriminación simple:** {q_meta['discriminacion_simple']:.3f}")
-    st.markdown("**Enunciado:**")
-    st.write(q_meta["Pregunta"])
-
-    df_q = df[df["QuestionId"] == selected_q].copy()
-    by_group = (
-        df_q.groupby(["Grado", "Curso"], dropna=False)["Acierto"]
-        .mean()
-        .mul(100)
-        .round(2)
-        .reset_index()
-        .sort_values("Acierto", ascending=False)
-    )
-    fig = px.bar(by_group, x="Curso", y="Acierto", color="Grado", title="% de acierto por curso")
-    st.plotly_chart(fig, use_container_width=True)
-
-    answers = (
-        df_q.groupby(["Respuesta", "Acierto"], dropna=False)
-        .size()
-        .reset_index(name="conteo")
-        .sort_values("conteo", ascending=False)
-    )
-    st.markdown("**Respuestas elegidas**")
-    st.dataframe(answers, use_container_width=True, height=300)
-
-def show_comparisons_tab(df: pd.DataFrame):
-    st.subheader("Comparativos")
-
-    if df.empty:
-        st.warning("No hay datos para comparar.")
-        return
-
-    dim = st.selectbox("Comparar por", ["Sede", "Grado", "Curso", "Genero", "Prueba", "Competencia"])
-
-    comp = (
-        df.groupby(dim, dropna=False)
+    out["sede_x_prueba"] = (
+        df.groupby(["Sede", "Prueba"], dropna=False)
         .agg(
-            estudiantes=("ID Estudiante", "nunique"),
-            respuestas=("Acierto", "size"),
+            registros=("Acierto", "size"),
+            estudiantes=("ID Estudiante", pd.Series.nunique),
             acierto=("Acierto", "mean"),
         )
         .reset_index()
     )
-    comp["acierto_pct"] = (comp["acierto"] * 100).round(2)
-    comp = comp.sort_values("acierto_pct", ascending=False)
+    out["sede_x_prueba"]["acierto_pct"] = (out["sede_x_prueba"]["acierto"] * 100).round(2)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        fig = px.bar(comp, x=dim, y="acierto_pct", title=f"% de acierto por {dim}")
-        st.plotly_chart(fig, use_container_width=True)
-    with c2:
-        fig = px.scatter(comp, x="estudiantes", y="acierto_pct", size="respuestas", hover_name=dim, title="Cobertura vs desempeño")
-        st.plotly_chart(fig, use_container_width=True)
-
-    st.dataframe(comp[[dim, "estudiantes", "respuestas", "acierto_pct"]], use_container_width=True)
-
-def show_data_tab(df: pd.DataFrame):
-    st.subheader("Datos filtrados")
-
-    search = st.text_input("Buscar texto en pregunta o respuesta")
-    data = df.copy()
-    if search:
-        mask_q = data["Pregunta"].fillna("").str.contains(search, case=False, na=False)
-        mask_r = data["Respuesta"].fillna("").str.contains(search, case=False, na=False)
-        data = data[mask_q | mask_r]
-
-    st.dataframe(data, use_container_width=True, height=500)
-
-    csv = data.to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
-        "Descargar datos filtrados",
-        data=csv,
-        file_name="datos_filtrados.csv",
-        mime="text/csv"
+    out["heat_sede_prueba"] = (
+        out["sede_x_prueba"]
+        .pivot(index="Sede", columns="Prueba", values="acierto_pct")
     )
 
-def load_default_file_if_exists():
+    out["red_x_competencia_prueba"] = (
+        df.groupby(["Prueba", "Competencia"], dropna=False)
+        .agg(
+            registros=("Acierto", "size"),
+            estudiantes=("ID Estudiante", pd.Series.nunique),
+            acierto=("Acierto", "mean"),
+        )
+        .reset_index()
+    )
+    out["red_x_competencia_prueba"]["acierto_pct"] = (
+        out["red_x_competencia_prueba"]["acierto"] * 100
+    ).round(2)
+
+    out["sede_x_competencia_prueba"] = (
+        df.groupby(["Prueba", "Competencia", "Sede"], dropna=False)
+        .agg(
+            registros=("Acierto", "size"),
+            estudiantes=("ID Estudiante", pd.Series.nunique),
+            acierto=("Acierto", "mean"),
+        )
+        .reset_index()
+    )
+    out["sede_x_competencia_prueba"]["acierto_pct"] = (
+        out["sede_x_competencia_prueba"]["acierto"] * 100
+    ).round(2)
+
+    return out
+
+
+def load_default_file_if_exists() -> Path | None:
     for path in DEFAULT_DATA_CANDIDATES:
         if path.exists():
             return path
     return None
 
-def main():
-    st.title("Visualizador académico de resultados")
-    st.caption("Explora desempeño por sede, curso, prueba, competencia, estudiante y pregunta.")
 
-    with st.expander("Qué hace este visualizador", expanded=False):
-        st.markdown(
-            """
-            - Resume el desempeño general.
-            - Permite filtrar por variables académicas y demográficas.
-            - Analiza estudiantes individualmente.
-            - Analiza dificultad y discriminación simple por pregunta.
-            - Permite exportar los datos filtrados.
-            """
+def sidebar_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, str | None]:
+    st.sidebar.header("Configuración")
+
+    sedes = sorted(df["Sede"].dropna().unique().tolist())
+    sede_focal = st.sidebar.selectbox(
+        "Sede focal para comparar con la red",
+        options=["Todas"] + sedes,
+        index=0,
+        help="La red siempre conserva todas las sedes dentro de los filtros generales. La sede focal solo se usa para el comparativo."
+    )
+
+    filtered = df.copy()
+
+    for col in ["Grado", "Curso", "Genero"]:
+        options = sorted([x for x in filtered[col].dropna().unique().tolist()])
+        if options:
+            selected = st.sidebar.multiselect(f"Filtrar {col}", options, default=options)
+            filtered = filtered[filtered[col].isin(selected)]
+
+    pruebas = sorted([x for x in filtered["Prueba"].dropna().unique().tolist()])
+    if pruebas:
+        selected_pruebas = st.sidebar.multiselect("Filtrar Prueba", pruebas, default=pruebas)
+        filtered = filtered[filtered["Prueba"].isin(selected_pruebas)]
+
+    if "Edad Estudiante" in filtered.columns and filtered["Edad Estudiante"].notna().any():
+        min_age = int(filtered["Edad Estudiante"].min())
+        max_age = int(filtered["Edad Estudiante"].max())
+        age_range = st.sidebar.slider("Rango de edad", min_age, max_age, (min_age, max_age))
+        filtered = filtered[filtered["Edad Estudiante"].fillna(min_age).between(age_range[0], age_range[1])]
+
+    if "Antiguedad" in filtered.columns and filtered["Antiguedad"].notna().any():
+        min_ant = int(filtered["Antiguedad"].min())
+        max_ant = int(filtered["Antiguedad"].max())
+        ant_range = st.sidebar.slider("Rango de antigüedad", min_ant, max_ant, (min_ant, max_ant))
+        filtered = filtered[filtered["Antiguedad"].fillna(min_ant).between(ant_range[0], ant_range[1])]
+
+    return filtered, (None if sede_focal == "Todas" else sede_focal)
+
+
+
+def kpi_row(agg: dict, sede_focal: str | None):
+    global_kpis = agg["global_kpis"]
+    by_sede = agg["by_sede"]
+
+    red_pct = global_kpis["acierto_red"] * 100 if pd.notna(global_kpis["acierto_red"]) else np.nan
+
+    if sede_focal is None:
+        sede_pct = red_pct
+        brecha = 0.0
+        sede_label = "Red completa"
+    else:
+        sede_row = by_sede[by_sede["Sede"] == sede_focal]
+        if sede_row.empty:
+            sede_pct = np.nan
+            brecha = np.nan
+        else:
+            sede_pct = float(sede_row.iloc[0]["acierto_pct"])
+            brecha = sede_pct - red_pct
+        sede_label = sede_focal
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Promedio red", f"{red_pct:,.2f}%")
+    c2.metric(f"Promedio {sede_label}", f"{sede_pct:,.2f}%")
+    c3.metric("Brecha vs red", f"{brecha:,.2f} p.p.")
+    c4.metric("Registros analizados", f"{global_kpis['filas']:,}")
+
+
+
+def show_resumen_ejecutivo(df: pd.DataFrame, agg: dict, sede_focal: str | None):
+    st.subheader("Resumen global")
+
+    if df.empty:
+        st.warning("No hay datos con los filtros seleccionados.")
+        return
+
+    kpi_row(agg, sede_focal)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**Promedio por sede**")
+        chart = agg["by_sede"].copy()
+        fig = px.bar(chart, x="Sede", y="acierto_pct", text="acierto_pct", title="% de acierto por sede")
+        fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(chart[["Sede", "estudiantes", "registros", "acierto_pct"]], use_container_width=True)
+
+    with c2:
+        st.markdown("**Promedio por prueba en la red**")
+        chart = agg["by_prueba"].copy()
+        fig = px.bar(chart, x="Prueba", y="acierto_pct", title="% de acierto por prueba")
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(chart[["Prueba", "estudiantes", "registros", "acierto_pct"]], use_container_width=True, height=320)
+
+    st.markdown("**Matriz sede x prueba**")
+    st.dataframe(agg["heat_sede_prueba"], use_container_width=True, height=260)
+
+
+
+def show_detalle_sedes_y_pruebas(df: pd.DataFrame, agg: dict, sede_focal: str | None):
+    st.subheader("Comportamiento por sede y por prueba")
+
+    sxp = agg["sede_x_prueba"].copy()
+    red_prueba = agg["by_prueba"][["Prueba", "acierto_pct"]].rename(columns={"acierto_pct": "red_pct"})
+    sxp = sxp.merge(red_prueba, on="Prueba", how="left")
+    sxp["brecha_vs_red"] = (sxp["acierto_pct"] - sxp["red_pct"]).round(2)
+
+    if sede_focal is not None:
+        foco = sxp[sxp["Sede"] == sede_focal].sort_values("brecha_vs_red", ascending=False)
+        st.markdown(f"**{sede_focal} frente a la red, prueba por prueba**")
+        c1, c2 = st.columns(2)
+        with c1:
+            fig = px.bar(
+                foco,
+                x="Prueba",
+                y="acierto_pct",
+                title=f"% de acierto de {sede_focal} por prueba"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        with c2:
+            comp_plot = foco[["Prueba", "acierto_pct", "red_pct"]].melt(
+                id_vars="Prueba", value_vars=["acierto_pct", "red_pct"],
+                var_name="Grupo", value_name="Porcentaje"
+            )
+            comp_plot["Grupo"] = comp_plot["Grupo"].replace({"acierto_pct": sede_focal, "red_pct": "Red"})
+            fig = px.bar(comp_plot, x="Prueba", y="Porcentaje", color="Grupo", barmode="group", title="Comparación prueba a prueba")
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.dataframe(
+            foco[["Prueba", "estudiantes", "registros", "acierto_pct", "red_pct", "brecha_vs_red"]],
+            use_container_width=True,
+            height=420
+        )
+    else:
+        st.markdown("**Comparativo de todas las sedes por prueba**")
+        fig = px.bar(sxp, x="Prueba", y="acierto_pct", color="Sede", barmode="group", title="% de acierto por prueba y sede")
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(
+            sxp[["Sede", "Prueba", "estudiantes", "registros", "acierto_pct", "red_pct", "brecha_vs_red"]].sort_values(["Prueba", "acierto_pct"], ascending=[True, False]),
+            use_container_width=True,
+            height=500
         )
 
+
+
+def show_prueba_tab(df: pd.DataFrame, agg: dict, prueba: str, sede_focal: str | None):
+    df_prueba = df[df["Prueba"] == prueba].copy()
+    if df_prueba.empty:
+        st.warning("No hay datos para esta prueba con los filtros seleccionados.")
+        return
+
+    red_prueba_row = agg["by_prueba"][agg["by_prueba"]["Prueba"] == prueba]
+    red_pct = float(red_prueba_row.iloc[0]["acierto_pct"]) if not red_prueba_row.empty else np.nan
+
+    if sede_focal is not None:
+        sede_prueba_row = agg["sede_x_prueba"][
+            (agg["sede_x_prueba"]["Prueba"] == prueba) &
+            (agg["sede_x_prueba"]["Sede"] == sede_focal)
+        ]
+        sede_pct = float(sede_prueba_row.iloc[0]["acierto_pct"]) if not sede_prueba_row.empty else np.nan
+        brecha = sede_pct - red_pct if pd.notna(sede_pct) and pd.notna(red_pct) else np.nan
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Promedio red en la prueba", f"{red_pct:,.2f}%")
+        c2.metric(f"Promedio {sede_focal}", f"{sede_pct:,.2f}%")
+        c3.metric("Brecha vs red", f"{brecha:,.2f} p.p.")
+    else:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Promedio red en la prueba", f"{red_pct:,.2f}%")
+        c2.metric("Competencias", f"{df_prueba['Competencia'].nunique(dropna=True):,}")
+        c3.metric("Registros", f"{len(df_prueba):,}")
+
+    red_comp = agg["red_x_competencia_prueba"]
+    red_comp = red_comp[red_comp["Prueba"] == prueba][["Competencia", "acierto_pct", "registros"]]
+    red_comp = red_comp.rename(columns={"acierto_pct": "Red", "registros": "registros_red"})
+
+    sede_comp = agg["sede_x_competencia_prueba"]
+    sede_comp = sede_comp[sede_comp["Prueba"] == prueba]
+
+    if sede_focal is not None:
+        sede_comp_f = sede_comp[sede_comp["Sede"] == sede_focal][["Competencia", "acierto_pct", "registros"]]
+        sede_comp_f = sede_comp_f.rename(columns={"acierto_pct": sede_focal, "registros": "registros_sede"})
+        comp = red_comp.merge(sede_comp_f, on="Competencia", how="outer")
+        comp["brecha_vs_red"] = (comp[sede_focal] - comp["Red"]).round(2)
+
+        plot_df = comp[["Competencia", "Red", sede_focal]].melt(
+            id_vars="Competencia", value_vars=["Red", sede_focal],
+            var_name="Grupo", value_name="Porcentaje"
+        )
+        fig = px.bar(plot_df, x="Competencia", y="Porcentaje", color="Grupo", barmode="group", title=f"{prueba}: comparación por competencia")
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown(f"**Comparativo por competencia: {sede_focal} vs red**")
+        st.dataframe(comp.sort_values("brecha_vs_red", ascending=False), use_container_width=True, height=340)
+    else:
+        plot_df = sede_comp[["Competencia", "Sede", "acierto_pct"]].copy()
+        fig = px.bar(plot_df, x="Competencia", y="acierto_pct", color="Sede", barmode="group", title=f"{prueba}: desempeño por competencia y sede")
+        st.plotly_chart(fig, use_container_width=True)
+
+        pivot_comp = sede_comp.pivot(index="Sede", columns="Competencia", values="acierto_pct")
+        st.markdown("**Matriz de competencia por sede**")
+        st.dataframe(pivot_comp, use_container_width=True, height=320)
+
+    st.markdown("**Detalle general de la prueba por sede**")
+    sede_prueba = agg["sede_x_prueba"]
+    sede_prueba = sede_prueba[sede_prueba["Prueba"] == prueba][["Sede", "estudiantes", "registros", "acierto_pct"]].sort_values("acierto_pct", ascending=False)
+    st.dataframe(sede_prueba, use_container_width=True, height=240)
+
+
+
+def main():
+    st.title("Visualizador agregado de resultados académicos")
+    st.caption("Carga automática del archivo del repositorio, análisis agregado y comparación de cada sede frente a la red.")
+
     local_file = load_default_file_if_exists()
-    uploaded_file = st.file_uploader("Si quieres, carga otro archivo (CSV o Excel)", type=["csv", "xlsx", "xls"])
+
+    with st.sidebar.expander("Reemplazar archivo fuente", expanded=False):
+        uploaded_file = st.file_uploader(
+            "Opcional: sube otro archivo (CSV o Excel)",
+            type=["csv", "xlsx", "xls"],
+            help="Si no subes nada, la app usará el archivo que encuentre en la carpeta data/ del repositorio."
+        )
+
+    if local_file is not None:
+        raw = read_dataframe_from_path(str(local_file))
+        source_label = f"Archivo cargado automáticamente: {local_file.relative_to(BASE_DIR) if local_file.is_absolute() and BASE_DIR in local_file.parents else local_file}"
+    elif uploaded_file is not None:
+        raw = read_uploaded_file(uploaded_file)
+        source_label = f"Archivo cargado manualmente: {uploaded_file.name}"
+    else:
+        st.error("No encontré el archivo en data/ y tampoco se subió uno manualmente.")
+        st.stop()
 
     if uploaded_file is not None:
-        source_label = f"Archivo cargado: {uploaded_file.name}"
         raw = read_uploaded_file(uploaded_file)
-    elif local_file is not None:
-        source_label = f"Archivo del repositorio: {local_file}"
-        raw = read_dataframe_from_path(str(local_file))
-    else:
-        st.info("No encontré un archivo en el repositorio. Sube uno para comenzar.")
+        source_label = f"Archivo cargado manualmente: {uploaded_file.name}"
+
+    try:
+        df = prepare_data(raw)
+    except ValueError as e:
+        st.error(str(e))
         st.stop()
 
     st.success(source_label)
+    st.info("Esta versión no elimina registros ni muestra resultados individuales. Todo el análisis es agregado.")
 
-    dedupe = st.checkbox(
-        "Eliminar duplicados por ID Estudiante + Prueba + QuestionId",
-        value=True,
-        help="Recomendado cuando existe más de un registro para la misma respuesta del mismo estudiante."
-    )
+    df_filtered, sede_focal = sidebar_filters(df)
 
-    raw = normalize_columns(raw)
-    missing = validate_columns(raw)
-    if missing:
-        st.error(f"Faltan columnas obligatorias: {', '.join(missing)}")
+    if df_filtered.empty:
+        st.warning("No hay datos con los filtros seleccionados.")
         st.stop()
 
-    df, duplicate_count = clean_data(raw, deduplicate=dedupe)
+    agg = compute_aggregates(df_filtered)
+    pruebas = agg["by_prueba"]["Prueba"].dropna().tolist()
 
-    if duplicate_count > 0 and dedupe:
-        st.warning(f"Se detectaron y removieron {duplicate_count:,} duplicados potenciales.")
+    main_tabs = st.tabs(["Resumen ejecutivo", "Sedes y pruebas", "Hojas por prueba"])
 
-    if df.empty:
-        st.warning("El archivo quedó vacío después de la limpieza.")
-        st.stop()
+    with main_tabs[0]:
+        show_resumen_ejecutivo(df_filtered, agg, sede_focal)
 
-    df_filtered = apply_filters(df)
-    student_summary = build_student_summary(df_filtered)
-    question_summary = build_question_summary(df_filtered, student_summary)
+    with main_tabs[1]:
+        show_detalle_sedes_y_pruebas(df_filtered, agg, sede_focal)
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Resumen", "Estudiantes", "Preguntas", "Comparativos", "Datos"])
+    with main_tabs[2]:
+        st.markdown("Cada pestaña muestra la comparación de una prueba entre la red y la sede focal.")
+        if not pruebas:
+            st.warning("No hay pruebas para mostrar.")
+        else:
+            prueba_tabs = st.tabs(pruebas)
+            for i, prueba in enumerate(pruebas):
+                with prueba_tabs[i]:
+                    show_prueba_tab(df_filtered, agg, prueba, sede_focal)
 
-    with tab1:
-        show_general_tab(df_filtered, student_summary)
-    with tab2:
-        show_students_tab(df_filtered, student_summary)
-    with tab3:
-        show_questions_tab(df_filtered, question_summary)
-    with tab4:
-        show_comparisons_tab(df_filtered)
-    with tab5:
-        show_data_tab(df_filtered)
 
 if __name__ == "__main__":
     main()

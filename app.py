@@ -202,7 +202,7 @@ def load_default_file_if_exists() -> Path | None:
 
 
 @st.cache_data(show_spinner=False)
-def read_dataframe_from_path(path_str: str) -> pd.DataFrame:
+def read_dataframe_from_path(path_str: str, file_version: int) -> pd.DataFrame:
     path = Path(path_str)
     suffix = path.suffix.lower()
     if suffix == ".csv":
@@ -924,6 +924,9 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
     if option_comp.empty:
         return fig
 
+    max_pct = float(option_comp[["pct_colombia", "pct_sede"]].to_numpy().max()) if not option_comp.empty else 0.0
+    x_upper = min(100.0, max(12.0, float(np.ceil(max_pct + 6))))
+
     for _, row in option_comp.iterrows():
         fig.add_trace(go.Scatter(
             x=[row["pct_colombia"], row["pct_sede"]],
@@ -940,7 +943,8 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
         mode="markers+text",
         name="Colombia",
         text=[f"{v:.1f}%" for v in option_comp["pct_colombia"]],
-        textposition="middle left",
+        textposition="top left",
+        cliponaxis=False,
         marker=dict(
             symbol="circle",
             size=12,
@@ -954,7 +958,8 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
         mode="markers+text",
         name=focus_label,
         text=[f"{v:.1f}%" for v in option_comp["pct_sede"]],
-        textposition="middle right",
+        textposition="top right",
+        cliponaxis=False,
         marker=dict(
             symbol="diamond",
             size=12,
@@ -967,9 +972,9 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
         xaxis_title="% de estudiantes que marcó la opción",
         yaxis_title="",
         height=max(420, 120 + 95 * len(option_comp)),
-        margin=dict(l=10, r=20, t=60, b=20),
+        margin=dict(l=10, r=30, t=70, b=20),
         yaxis=dict(automargin=True, tickfont=dict(size=12)),
-        xaxis=dict(tickfont=dict(size=12)),
+        xaxis=dict(tickfont=dict(size=12), range=[0, x_upper]),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1.0),
     )
     return fig
@@ -1319,7 +1324,7 @@ def main():
         st.error("No encontré el archivo base. Verifica que exista en data/EvaluarParaAvanzar_CalA.xlsx")
         st.stop()
 
-    raw = read_dataframe_from_path(str(local_file))
+    raw = read_dataframe_from_path(str(local_file), int(local_file.stat().st_mtime_ns))
     raw = normalize_columns(raw)
     missing = validate_columns(raw)
     if missing:

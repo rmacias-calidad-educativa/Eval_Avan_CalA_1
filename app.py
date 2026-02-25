@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import textwrap
 import unicodedata
 
 import numpy as np
@@ -156,6 +157,23 @@ def shorten_text(value: str, max_len: int = 90) -> str:
     return raw[: max_len - 1].rstrip() + "…"
 
 
+def wrap_plot_label(value: str, width: int = 42, max_lines: int = 4) -> str:
+    raw = str(value).strip().replace("\n", " ")
+    raw = re.sub(r"\s+", " ", raw)
+    if not raw:
+        return ""
+    lines = textwrap.wrap(
+        raw,
+        width=width,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+    if max_lines and len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1].rstrip(" .,;:") + "…"
+    return "<br>".join(lines)
+
+
 def compute_axis_bounds(series: pd.Series, min_floor: float = 20, padding: float = 3) -> list[float]:
     clean = pd.Series(series).dropna().astype(float)
     if clean.empty:
@@ -288,11 +306,11 @@ def friendly_comp_table(comp: pd.DataFrame) -> pd.DataFrame:
         return comp
     out = sort_benchmark(comp, "Competencia").copy()
     out = out.rename(columns={
-        "acierto_sede_pct": "% de acierto en la sede",
-        "acierto_red_pct": "% de acierto en Colombia",
+        "acierto_sede_pct": "% de rendimiento en la sede",
+        "acierto_red_pct": "% de rendimiento en Colombia",
         "brecha_pp": "Brecha frente a Colombia (pp)",
     })
-    return out[["Competencia", "% de acierto en la sede", "% de acierto en Colombia", "Brecha frente a Colombia (pp)"]]
+    return out[["Competencia", "% de rendimiento en la sede", "% de rendimiento en Colombia", "Brecha frente a Colombia (pp)"]]
 
 
 def safe_pct(series: pd.Series) -> float:
@@ -516,31 +534,26 @@ def benchmark_cards(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
     colombia_pct = safe_pct(df["Acierto"])
     focus_pct = safe_pct(focus_df["Acierto"])
     brecha = focus_pct - colombia_pct
-    sedes = (
-        df.groupby(["Sede", "Sede Corta"], dropna=False)["Acierto"]
+
+    by_prueba_desc = (
+        df.groupby("Prueba Base", dropna=False)["Acierto"]
         .mean()
         .mul(100)
         .sort_values(ascending=False)
         .reset_index()
     )
-    best_sede = sedes.iloc[0]["Sede Corta"] if not sedes.empty else "Sin dato"
-    best_sede_pct = float(sedes.iloc[0]["Acierto"]) if not sedes.empty else 0.0
+    prueba_destacada = by_prueba_desc.iloc[0]["Prueba Base"] if not by_prueba_desc.empty else "Sin dato"
+    prueba_destacada_pct = float(by_prueba_desc.iloc[0]["Acierto"]) if not by_prueba_desc.empty else 0.0
 
-    by_prueba = (
-        df.groupby("Prueba Base", dropna=False)["Acierto"]
-        .mean()
-        .mul(100)
-        .sort_values()
-        .reset_index()
-    )
-    prueba_critica = by_prueba.iloc[0]["Prueba Base"] if not by_prueba.empty else "Sin dato"
-    prueba_critica_pct = float(by_prueba.iloc[0]["Acierto"]) if not by_prueba.empty else 0.0
+    by_prueba_critica = by_prueba_desc.sort_values("Acierto", ascending=True).reset_index(drop=True)
+    prueba_critica = by_prueba_critica.iloc[0]["Prueba Base"] if not by_prueba_critica.empty else "Sin dato"
+    prueba_critica_pct = float(by_prueba_critica.iloc[0]["Acierto"]) if not by_prueba_critica.empty else 0.0
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Promedio Colombia", f"{colombia_pct:.1f}%")
     c2.metric(f"Promedio {focus_label}", f"{focus_pct:.1f}%", delta=f"{brecha:+.2f} pp")
-    c3.metric("Mejor sede", f"{best_sede}", delta=f"{best_sede_pct:.1f}%")
-    c4.metric("Prueba con menor acierto", f"{prueba_critica}", delta=f"{prueba_critica_pct:.1f}%")
+    c3.metric("Prueba con mayor rendimiento", f"{prueba_destacada}", delta=f"{prueba_destacada_pct:.1f}%")
+    c4.metric("Prueba con menor rendimiento", f"{prueba_critica}", delta=f"{prueba_critica_pct:.1f}%")
 
 
 def render_radar_cards(df: pd.DataFrame):
@@ -636,7 +649,7 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
             x="Sede Corta",
             y="acierto_colombia_pct",
             color="destacado",
-            title="% de acierto por sede",
+            title="% de rendimiento por sede",
             text="acierto_colombia_pct",
             color_discrete_map={focus_label: "#0284c7", "Otras sedes": "#94a3b8"},
         )
@@ -651,7 +664,7 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
         if promedio_colombia > y_range[1]:
             y_range[1] = min(100.0, float(np.ceil(promedio_colombia + 3)))
         fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-        fig.update_layout(yaxis_title="% de acierto", xaxis_title="", yaxis_range=y_range, showlegend=False)
+        fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="", yaxis_range=y_range, showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
@@ -672,9 +685,9 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
             y="Porcentaje",
             color="Serie",
             markers=True,
-            title=f"% de acierto por prueba: {focus_label} vs Colombia"
+            title=f"% de rendimiento por prueba: {focus_label} vs Colombia"
         )
-        fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
+        fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="")
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Perfil por sede frente a Colombia**")
@@ -689,7 +702,7 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
         .reset_index()
         .pivot(index="Sede Corta", columns="Prueba Base", values="Acierto")
     )
-    fig = px.imshow(heat, text_auto=True, aspect="auto", title="% de acierto por sede y prueba")
+    fig = px.imshow(heat, text_auto=True, aspect="auto", title="% de rendimiento por sede y prueba")
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Trayectoria por grado: sede focal vs Colombia**")
@@ -712,7 +725,7 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
     melted = merged.melt(id_vars="Grado", value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Porcentaje")
     melted["Serie"] = melted["Serie"].map({"Acierto": "Colombia", "Acierto Focus": focus_label})
     fig = px.line(melted, x="Grado", y="Porcentaje", color="Serie", markers=True, title=f"Trayectoria por grado: {focus_label} vs Colombia")
-    fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
+    fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="")
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Lectura rápida para docentes y directivos**")
@@ -720,16 +733,16 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
     comp = sort_benchmark(comp, "Competencia")
 
     weakest = comp.sort_values("brecha_pp").head(5).rename(columns={
-        "acierto_sede_pct": "% de acierto en la sede",
-        "acierto_red_pct": "% de acierto en Colombia",
+        "acierto_sede_pct": "% de rendimiento en la sede",
+        "acierto_red_pct": "% de rendimiento en Colombia",
         "brecha_pp": "Brecha frente a Colombia (pp)",
-    })[["Competencia", "% de acierto en la sede", "% de acierto en Colombia", "Brecha frente a Colombia (pp)"]]
+    })[["Competencia", "% de rendimiento en la sede", "% de rendimiento en Colombia", "Brecha frente a Colombia (pp)"]]
 
     strongest = comp.sort_values("brecha_pp", ascending=False).head(5).rename(columns={
-        "acierto_sede_pct": "% de acierto en la sede",
-        "acierto_red_pct": "% de acierto en Colombia",
+        "acierto_sede_pct": "% de rendimiento en la sede",
+        "acierto_red_pct": "% de rendimiento en Colombia",
         "brecha_pp": "Brecha frente a Colombia (pp)",
-    })[["Competencia", "% de acierto en la sede", "% de acierto en Colombia", "Brecha frente a Colombia (pp)"]]
+    })[["Competencia", "% de rendimiento en la sede", "% de rendimiento en Colombia", "Brecha frente a Colombia (pp)"]]
 
     st.markdown(f"**Competencias donde {focus_label} necesita más apoyo**")
     st.dataframe(weakest, use_container_width=True, hide_index=True)
@@ -777,7 +790,7 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
         barmode="group",
         title=f"{prueba}: competencias, {focus_label} vs Colombia"
     )
-    fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
+    fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="")
     st.plotly_chart(fig, use_container_width=True)
 
     c5, c6 = st.columns([1, 1])
@@ -815,7 +828,7 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
         melted = grade.melt(id_vars="Grado", value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Porcentaje")
         melted["Serie"] = melted["Serie"].map({"Acierto": "Colombia", "Acierto Focus": focus_label})
         fig = px.line(melted, x="Grado", y="Porcentaje", color="Serie", markers=True, title=f"{prueba}: trayectoria por grado")
-        fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
+        fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="")
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Tabla de comparación por competencia**")
@@ -897,7 +910,8 @@ def build_option_comparison(question_id: int | float, colombia_df: pd.DataFrame,
         return merged
     merged["tipo"] = np.where(merged["Acierto"] == 1, "Respuesta correcta", "Distractor")
     merged["color"] = np.where(merged["Acierto"] == 1, "#16a34a", "#94a3b8")
-    merged["Opción de respuesta"] = merged["Respuesta Limpia"].map(lambda x: shorten_text(x, 100))
+    merged["Opción de respuesta"] = merged["Respuesta Limpia"].map(lambda x: shorten_text(x, 110))
+    merged["Opción de respuesta gráfico"] = merged["Opción de respuesta"].map(lambda x: wrap_plot_label(x, width=42, max_lines=4))
     merged["pico"] = merged[["pct_colombia", "pct_sede"]].max(axis=1)
     merged = merged.sort_values(["Acierto", "pico"], ascending=[False, False]).reset_index(drop=True)
     merged["pct_colombia"] = merged["pct_colombia"].round(2)
@@ -913,7 +927,7 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
     for _, row in option_comp.iterrows():
         fig.add_trace(go.Scatter(
             x=[row["pct_colombia"], row["pct_sede"]],
-            y=[row["Opción de respuesta"], row["Opción de respuesta"]],
+            y=[row["Opción de respuesta gráfico"], row["Opción de respuesta gráfico"]],
             mode="lines",
             line=dict(color=row["color"], width=4),
             hoverinfo="skip",
@@ -922,7 +936,7 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
 
     fig.add_trace(go.Scatter(
         x=option_comp["pct_colombia"],
-        y=option_comp["Opción de respuesta"],
+        y=option_comp["Opción de respuesta gráfico"],
         mode="markers+text",
         name="Colombia",
         text=[f"{v:.1f}%" for v in option_comp["pct_colombia"]],
@@ -936,7 +950,7 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
     ))
     fig.add_trace(go.Scatter(
         x=option_comp["pct_sede"],
-        y=option_comp["Opción de respuesta"],
+        y=option_comp["Opción de respuesta gráfico"],
         mode="markers+text",
         name=focus_label,
         text=[f"{v:.1f}%" for v in option_comp["pct_sede"]],
@@ -952,10 +966,26 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
         title=f"Cómo se repartieron las respuestas: {focus_label} vs Colombia",
         xaxis_title="% de estudiantes que marcó la opción",
         yaxis_title="",
-        height=max(380, 90 + 70 * len(option_comp)),
-        margin=dict(l=40, r=20, t=60, b=20),
+        height=max(420, 120 + 95 * len(option_comp)),
+        margin=dict(l=10, r=20, t=60, b=20),
+        yaxis=dict(automargin=True, tickfont=dict(size=12)),
+        xaxis=dict(tickfont=dict(size=12)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1.0),
     )
     return fig
+
+
+def render_compact_summary_card(title: str, value: str, tone: str = "#f8fafc") -> None:
+    body = str(value).replace(" · ", "<br>")
+    st.markdown(
+        f"""
+        <div style=\"background: rgba(15, 23, 42, 0.38); border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 14px; padding: 0.9rem 0.95rem; min-height: 112px;\">
+            <div style=\"font-size: 0.95rem; color: #cbd5e1; margin-bottom: 0.45rem; line-height: 1.25;\">{title}</div>
+            <div style=\"font-size: 1.45rem; font-weight: 700; color: {tone}; line-height: 1.22; word-break: break-word;\">{body}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
@@ -1008,15 +1038,20 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
         return f"{row['selector_label']}"
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Preguntas analizadas", f"{len(items_prueba):,}")
-    c2.metric("Pregunta más difícil", _card_label(hardest))
-    c3.metric("Pregunta más fácil", _card_label(easiest))
-    c4.metric("Mayor discriminación", _card_label(best_disc))
-    c5.metric("Menor discriminación", _card_label(worst_disc))
+    with c1:
+        render_compact_summary_card("Preguntas analizadas", f"{len(items_prueba):,}", tone="#ffffff")
+    with c2:
+        render_compact_summary_card("Pregunta más difícil", _card_label(hardest), tone="#fde68a")
+    with c3:
+        render_compact_summary_card("Pregunta más fácil", _card_label(easiest), tone="#bbf7d0")
+    with c4:
+        render_compact_summary_card("Mayor discriminación", _card_label(best_disc), tone="#bfdbfe")
+    with c5:
+        render_compact_summary_card("Menor discriminación", _card_label(worst_disc), tone="#fecaca")
 
     difficult_table = items_prueba[["selector_label", "Competencia", "dificultad_pct", "p_bis", "d27"]].rename(columns={
         "selector_label": "Pregunta",
-        "dificultad_pct": "% de acierto",
+        "dificultad_pct": "% de rendimiento",
         "p_bis": "Discriminación (p bis)",
         "d27": "Discriminación (D27)",
     })
@@ -1036,7 +1071,7 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
 
     st.markdown("### Lectura pedagógica de la pregunta")
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("% de acierto", f"{item_row['dificultad_pct']:.2f}%")
+    m1.metric("% de rendimiento", f"{item_row['dificultad_pct']:.2f}%")
     m2.metric("Discriminación (p bis)", f"{item_row['p_bis']:.3f}" if pd.notna(item_row["p_bis"]) else "Sin dato")
     m3.metric("Discriminación (D27)", f"{item_row['d27']:.3f}" if pd.notna(item_row["d27"]) else "Sin dato")
     m4.metric("Grado", str(item_row["Grado Etiqueta"]))
@@ -1091,7 +1126,7 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
     fig.add_vline(x=0.50, line_dash="dash")
     fig.add_hline(y=0.20, line_dash="dash")
     fig.update_layout(
-        xaxis_title="Dificultad (proporción de acierto)",
+        xaxis_title="Dificultad (proporción de respuestas correctas)",
         yaxis_title="Discriminación (point-biserial)"
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -1127,7 +1162,7 @@ def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: s
             "acierto_sede_pct": focus_label,
         })
         fig = px.line(melted, x="Antiguedad", y="Porcentaje", color="Serie", markers=True, title="Desempeño por antigüedad")
-        fig.update_layout(yaxis_title="% de acierto", xaxis_title="Años de antigüedad")
+        fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="Años de antigüedad")
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
@@ -1150,7 +1185,7 @@ def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: s
     if heat.empty:
         st.info("La sede focal no tiene suficiente información en este filtro para el cruce.")
     else:
-        fig = px.imshow(heat, text_auto=True, aspect="auto", title=f"{focus_label}: % de acierto por antigüedad y prueba")
+        fig = px.imshow(heat, text_auto=True, aspect="auto", title=f"{focus_label}: % de rendimiento por antigüedad y prueba")
         st.plotly_chart(fig, use_container_width=True)
 
 

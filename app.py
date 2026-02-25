@@ -479,7 +479,7 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
             id_vars="Prueba Base",
             value_vars=["acierto_red_pct", "acierto_sede_pct"],
             var_name="Serie",
-            value_name="Acierto"
+            value_name="Porcentaje"
         )
         melted["Serie"] = melted["Serie"].map({
             "acierto_red_pct": "Red",
@@ -488,7 +488,7 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
         fig = px.bar(
             melted,
             x="Prueba Base",
-            y="Acierto",
+            y="Porcentaje",
             color="Serie",
             barmode="group",
             title=f"% de acierto por prueba: {focus_label} vs red"
@@ -526,9 +526,9 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
         merged = by_grade_net.merge(by_grade_focus, on="Grado", how="left")
         merged["orden"] = merged["Grado"].map(lambda x: grade_sort_key(x)[0])
         merged = merged.sort_values(["orden", "Grado"])
-        melted = merged.melt(id_vars="Grado", value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Acierto")
+        melted = merged.melt(id_vars="Grado", value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Porcentaje")
         melted["Serie"] = melted["Serie"].map({"Acierto": "Red", "Acierto Focus": focus_label})
-        fig = px.line(melted, x="Grado", y="Acierto", color="Serie", markers=True, title=f"Trayectoria por grado: {focus_label} vs red")
+        fig = px.line(melted, x="Grado", y="Porcentaje", color="Serie", markers=True, title=f"Trayectoria por grado: {focus_label} vs red")
         fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
         st.plotly_chart(fig, use_container_width=True)
 
@@ -585,7 +585,7 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
             id_vars="Competencia",
             value_vars=["acierto_red_pct", "acierto_sede_pct"],
             var_name="Serie",
-            value_name="Acierto"
+            value_name="Porcentaje"
         )
         melted["Serie"] = melted["Serie"].map({
             "acierto_red_pct": "Red",
@@ -594,7 +594,7 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
         fig = px.bar(
             melted,
             x="Competencia",
-            y="Acierto",
+            y="Porcentaje",
             color="Serie",
             barmode="group",
             title=f"{prueba}: competencias, {focus_label} vs red"
@@ -632,9 +632,9 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
         grade = grade_net.merge(grade_focus, on="Grado", how="left")
         grade["orden"] = grade["Grado"].map(lambda x: grade_sort_key(x)[0])
         grade = grade.sort_values(["orden", "Grado"])
-        melted = grade.melt(id_vars="Grado", value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Acierto")
+        melted = grade.melt(id_vars="Grado", value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Porcentaje")
         melted["Serie"] = melted["Serie"].map({"Acierto": "Red", "Acierto Focus": focus_label})
-        fig = px.line(melted, x="Grado", y="Acierto", color="Serie", markers=True, title=f"{prueba}: trayectoria por grado")
+        fig = px.line(melted, x="Grado", y="Porcentaje", color="Serie", markers=True, title=f"{prueba}: trayectoria por grado")
         st.plotly_chart(fig, use_container_width=True)
 
     with c8:
@@ -842,13 +842,13 @@ def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: s
             id_vars="Antiguedad",
             value_vars=["acierto_red_pct", "acierto_sede_pct"],
             var_name="Serie",
-            value_name="Acierto"
+            value_name="Porcentaje"
         )
         melted["Serie"] = melted["Serie"].map({
             "acierto_red_pct": "Red",
             "acierto_sede_pct": focus_label,
         })
-        fig = px.line(melted, x="Antiguedad", y="Acierto", color="Serie", markers=True, title="Desempeño por antigüedad")
+        fig = px.line(melted, x="Antiguedad", y="Porcentaje", color="Serie", markers=True, title="Desempeño por antigüedad")
         fig.update_layout(yaxis_title="% de acierto", xaxis_title="Años de antigüedad")
         st.plotly_chart(fig, use_container_width=True)
 

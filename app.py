@@ -11,7 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-st.set_page_config(page_title="Visualizador pedagógico y psicométrico", layout="wide")
+st.set_page_config(page_title="Evaluación Diagnóstica 2026 Calendario A", layout="wide")
 
 REQUIRED_COLUMNS = [
     "Sede", "ID Estudiante", "Edad Estudiante", "Genero", "Grado", "Curso",
@@ -37,15 +37,6 @@ DEFAULT_DATA_CANDIDATES = [
 ]
 
 GRADE_ORDER = {
-    "transicion": 0,
-    "transición": 0,
-    "prejardin": -2,
-    "pre jardín": -2,
-    "prejardín": -2,
-    "jardin": -1,
-    "jardín": -1,
-    "primero": 1,
-    "segundo": 2,
     "tercero": 3,
     "cuarto": 4,
     "quinto": 5,
@@ -58,7 +49,35 @@ GRADE_ORDER = {
     "décimo": 10,
     "undecimo": 11,
     "undécimo": 11,
+    "primero": 101,
+    "segundo": 102,
+    "transicion": 103,
+    "transición": 103,
+    "jardin": 104,
+    "jardín": 104,
+    "prejardin": 105,
+    "pre jardín": 105,
+    "prejardín": 105,
 }
+
+COMPETENCY_ORDER = [
+    "Conocimientos",
+    "Pensamiento Social",
+    "Argumentación en contextos ciudadanos",
+    "Multiperspectivismo",
+    "pensamiento sistémico",
+    "Pensamiento Reflexivo y Sistémico",
+    "Interpretación y Análisis de Perspectivas",
+    "Explicación de fenómenos",
+    "Indagación",
+    "Conocimiento científico",
+    "Interpretación y representación",
+    "Formulación y ejecución",
+    "Razonamiento",
+    "Comunicación",
+    "Resolución de problemas",
+    "Argumentación",
+]
 
 P_BIS_TARGET = 0.20
 D27_TARGET = 0.20
@@ -67,6 +86,21 @@ D27_TARGET = 0.20
 def strip_accents(text: str) -> str:
     text = unicodedata.normalize("NFKD", str(text))
     return "".join(ch for ch in text if not unicodedata.combining(ch))
+
+
+COMPETENCY_ORDER_MAP = {strip_accents(x).lower(): i for i, x in enumerate(COMPETENCY_ORDER, start=1)}
+
+
+def competency_sort_key(value: str) -> tuple[int, str]:
+    raw = str(value).strip()
+    key = strip_accents(raw).lower()
+    return (COMPETENCY_ORDER_MAP.get(key, 999), raw)
+
+
+def clean_sede_label(value: str) -> str:
+    raw = str(value).strip()
+    cleaned = re.sub(r"^\s*innova\s+", "", raw, flags=re.I)
+    return cleaned.title() if cleaned else raw
 
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -104,6 +138,9 @@ def course_sort_key(value: str) -> tuple[int, str]:
 def clean_prueba_label(value: str) -> str:
     raw = str(value).strip()
     cleaned = re.sub(r"\s+\d+\s*°?$", "", raw).strip()
+    key = strip_accents(cleaned).lower()
+    if "sociales" in key or "competencias ciudadanas" in key or "pensamiento ciudadano" in key:
+        return "Ciencias sociales"
     return cleaned or raw
 
 
@@ -172,6 +209,7 @@ def prepare_data(raw: pd.DataFrame) -> pd.DataFrame:
 
     df["Respuesta Limpia"] = df["Respuesta"].fillna("Sin respuesta")
     df["Prueba Base"] = df["Prueba"].map(clean_prueba_label)
+    df["Sede Corta"] = df["Sede"].map(clean_sede_label)
     df["Grado Orden"] = df["Grado"].map(lambda x: grade_sort_key(x)[0])
     df["Curso Orden"] = df["Curso"].map(lambda x: course_sort_key(x)[0])
 
@@ -194,6 +232,35 @@ def add_benchmark(df: pd.DataFrame, focus_df: pd.DataFrame, dim: str) -> pd.Data
     out["acierto_sede_pct"] = (out["acierto_sede"] * 100).round(2)
     out["brecha_pp"] = (out["acierto_sede_pct"] - out["acierto_red_pct"]).round(2)
     return out
+
+
+def sort_benchmark(out: pd.DataFrame, dim: str) -> pd.DataFrame:
+    if out.empty:
+        return out
+    out = out.copy()
+    if dim == "Competencia":
+        out["__orden__"] = out[dim].map(lambda x: competency_sort_key(x)[0])
+        out = out.sort_values(["__orden__", dim]).drop(columns="__orden__")
+    elif dim == "Grado":
+        out["__orden__"] = out[dim].map(lambda x: grade_sort_key(x)[0])
+        out = out.sort_values(["__orden__", dim]).drop(columns="__orden__")
+    elif dim == "Sede":
+        out = out.sort_values("acierto_red_pct", ascending=False)
+    else:
+        out = out.sort_values(dim)
+    return out
+
+
+def friendly_comp_table(comp: pd.DataFrame) -> pd.DataFrame:
+    if comp.empty:
+        return comp
+    out = sort_benchmark(comp, "Competencia").copy()
+    out = out.rename(columns={
+        "acierto_sede_pct": "% de acierto en la sede",
+        "acierto_red_pct": "% de acierto en Colombia",
+        "brecha_pp": "Brecha frente a Colombia (pp)",
+    })
+    return out[["Competencia", "% de acierto en la sede", "% de acierto en Colombia", "Brecha frente a Colombia (pp)"]]
 
 
 def safe_pct(series: pd.Series) -> float:
@@ -390,7 +457,7 @@ def make_indicator(title: str, value: float, delta: float | None = None, suffix:
     indicator_kwargs = dict(
         mode="number+gauge" if delta is None else "number+delta+gauge",
         value=float(value),
-        title={"text": title},
+        title={"text": title, "font": {"size": 18}},
         number={"suffix": suffix},
         gauge={
             "axis": {"range": [0, 100]},
@@ -406,22 +473,22 @@ def make_indicator(title: str, value: float, delta: float | None = None, suffix:
     if delta is not None:
         indicator_kwargs["delta"] = {"reference": float(reference if reference is not None else value - delta), "valueformat": ".2f"}
     fig.add_trace(go.Indicator(**indicator_kwargs))
-    fig.update_layout(height=230, margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_layout(height=220, margin=dict(l=18, r=18, t=55, b=10))
     return fig
 
 
 def benchmark_cards(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
-    red_pct = safe_pct(df["Acierto"])
+    colombia_pct = safe_pct(df["Acierto"])
     focus_pct = safe_pct(focus_df["Acierto"])
-    brecha = focus_pct - red_pct
+    brecha = focus_pct - colombia_pct
     sedes = (
-        df.groupby("Sede", dropna=False)["Acierto"]
+        df.groupby(["Sede", "Sede Corta"], dropna=False)["Acierto"]
         .mean()
         .mul(100)
         .sort_values(ascending=False)
         .reset_index()
     )
-    best_sede = sedes.iloc[0]["Sede"] if not sedes.empty else "Sin dato"
+    best_sede = sedes.iloc[0]["Sede Corta"] if not sedes.empty else "Sin dato"
     best_sede_pct = float(sedes.iloc[0]["Acierto"]) if not sedes.empty else 0.0
 
     by_prueba = (
@@ -436,41 +503,52 @@ def benchmark_cards(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.plotly_chart(make_indicator("Promedio red", red_pct), use_container_width=True)
+        st.plotly_chart(make_indicator("Promedio Colombia", colombia_pct), use_container_width=True)
     with c2:
-        st.plotly_chart(make_indicator(f"Promedio {focus_label}", focus_pct, delta=brecha, reference=red_pct), use_container_width=True)
+        st.plotly_chart(make_indicator(f"Promedio {focus_label}", focus_pct, delta=brecha, reference=colombia_pct), use_container_width=True)
     with c3:
         st.plotly_chart(make_indicator(f"Mejor sede: {best_sede}", best_sede_pct), use_container_width=True)
     with c4:
-        st.plotly_chart(make_indicator(f"Prueba crítica: {prueba_critica}", prueba_critica_pct), use_container_width=True)
+        st.plotly_chart(make_indicator(f"Prueba con menor acierto: {prueba_critica}", prueba_critica_pct), use_container_width=True)
 
     c5, c6, c7, c8 = st.columns(4)
-    c5.metric("Estudiantes red", f"{safe_nunique(df['ID Estudiante']):,}")
-    c6.metric(f"Estudiantes {focus_label}", f"{safe_nunique(focus_df['ID Estudiante']):,}")
-    c7.metric("Respuestas analizadas", f"{len(df):,}")
-    c8.metric("Brecha sede vs red", f"{brecha:+.2f} pp")
+    c5.metric("Estudiantes en Colombia", f"{safe_nunique(df['ID Estudiante']):,}")
+    c6.metric(f"Estudiantes en {focus_label}", f"{safe_nunique(focus_df['ID Estudiante']):,}")
+    c7.metric("Sedes visibles", f"{safe_nunique(df['Sede']):,}")
+    c8.metric("Pruebas visibles", f"{safe_nunique(df['Prueba Base']):,}")
 
 
 def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
-    st.subheader("Panorama global para conversación pedagógica")
+    st.subheader("Resultados globales")
 
     benchmark_cards(df, focus_df, focus_label)
 
-    by_sede = add_benchmark(df, focus_df, "Sede").sort_values("acierto_red_pct", ascending=False)
-    by_sede["promedio_red_global"] = safe_pct(df["Acierto"])
+    by_sede = (
+        df.groupby(["Sede", "Sede Corta"], dropna=False)["Acierto"]
+        .mean()
+        .mul(100)
+        .reset_index(name="acierto_colombia_pct")
+        .sort_values("acierto_colombia_pct", ascending=False)
+    )
 
-    c1, c2 = st.columns([1.1, 1])
+    c1, c2 = st.columns([1, 1])
     with c1:
         fig = px.bar(
             by_sede,
-            x="Sede",
-            y="acierto_red_pct",
+            x="Sede Corta",
+            y="acierto_colombia_pct",
             title="% de acierto por sede",
-            text="acierto_red_pct"
+            text="acierto_colombia_pct"
         )
-        fig.add_hline(y=safe_pct(df["Acierto"]), line_dash="dash", annotation_text="Promedio red")
+        fig.add_hline(
+            y=safe_pct(df["Acierto"]),
+            line_dash="dash",
+            annotation_text="Promedio Colombia",
+            annotation_position="top left"
+        )
+        ymax = max(100, float(by_sede["acierto_colombia_pct"].max()) + 3) if not by_sede.empty else 100
         fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-        fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
+        fig.update_layout(yaxis_title="% de acierto", xaxis_title="", yaxis_range=[20, ymax])
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
@@ -482,7 +560,7 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
             value_name="Porcentaje"
         )
         melted["Serie"] = melted["Serie"].map({
-            "acierto_red_pct": "Red",
+            "acierto_red_pct": "Colombia",
             "acierto_sede_pct": focus_label,
         })
         fig = px.bar(
@@ -491,74 +569,66 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
             y="Porcentaje",
             color="Serie",
             barmode="group",
-            title=f"% de acierto por prueba: {focus_label} vs red"
+            title=f"% de acierto por prueba: {focus_label} vs Colombia"
         )
         fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Mapa de calor por sede y prueba**")
     heat = (
-        df.groupby(["Sede", "Prueba Base"], dropna=False)["Acierto"]
+        df.groupby(["Sede Corta", "Prueba Base"], dropna=False)["Acierto"]
         .mean()
         .mul(100)
         .round(1)
         .reset_index()
-        .pivot(index="Sede", columns="Prueba Base", values="Acierto")
+        .pivot(index="Sede Corta", columns="Prueba Base", values="Acierto")
     )
     fig = px.imshow(heat, text_auto=True, aspect="auto", title="% de acierto por sede y prueba")
     st.plotly_chart(fig, use_container_width=True)
 
-    c3, c4 = st.columns(2)
-    with c3:
-        by_grade_net = (
-            df.groupby("Grado", dropna=False)["Acierto"]
-            .mean()
-            .mul(100)
-            .reset_index()
-        )
-        by_grade_focus = (
-            focus_df.groupby("Grado", dropna=False)["Acierto"]
-            .mean()
-            .mul(100)
-            .reset_index()
-            .rename(columns={"Acierto": "Acierto Focus"})
-        )
-        merged = by_grade_net.merge(by_grade_focus, on="Grado", how="left")
-        merged["orden"] = merged["Grado"].map(lambda x: grade_sort_key(x)[0])
-        merged = merged.sort_values(["orden", "Grado"])
-        melted = merged.melt(id_vars="Grado", value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Porcentaje")
-        melted["Serie"] = melted["Serie"].map({"Acierto": "Red", "Acierto Focus": focus_label})
-        fig = px.line(melted, x="Grado", y="Porcentaje", color="Serie", markers=True, title=f"Trayectoria por grado: {focus_label} vs red")
-        fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("**Trayectoria por grado: sede focal vs Colombia**")
+    by_grade_net = (
+        df.groupby("Grado", dropna=False)["Acierto"]
+        .mean()
+        .mul(100)
+        .reset_index()
+    )
+    by_grade_focus = (
+        focus_df.groupby("Grado", dropna=False)["Acierto"]
+        .mean()
+        .mul(100)
+        .reset_index()
+        .rename(columns={"Acierto": "Acierto Focus"})
+    )
+    merged = by_grade_net.merge(by_grade_focus, on="Grado", how="left")
+    merged["orden"] = merged["Grado"].map(lambda x: grade_sort_key(x)[0])
+    merged = merged.sort_values(["orden", "Grado"])
+    melted = merged.melt(id_vars="Grado", value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Porcentaje")
+    melted["Serie"] = melted["Serie"].map({"Acierto": "Colombia", "Acierto Focus": focus_label})
+    fig = px.line(melted, x="Grado", y="Porcentaje", color="Serie", markers=True, title=f"Trayectoria por grado: {focus_label} vs Colombia")
+    fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
+    st.plotly_chart(fig, use_container_width=True)
 
-    with c4:
-        comp = add_benchmark(df, focus_df, "Competencia").sort_values("brecha_pp")
-        fig = px.bar(
-            comp,
-            x="brecha_pp",
-            y="Competencia",
-            orientation="h",
-            title=f"Brecha por competencia: {focus_label} vs red",
-            text="brecha_pp"
-        )
-        fig.add_vline(x=0, line_dash="dash")
-        fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-        fig.update_layout(xaxis_title="Puntos porcentuales", yaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("**Lectura rápida para docentes y directivos**")
+    comp = add_benchmark(df, focus_df, "Competencia")
+    comp = sort_benchmark(comp, "Competencia")
 
-    st.markdown("**Lectura rápida para profesores**")
-    comp = add_benchmark(df, focus_df, "Competencia").sort_values("brecha_pp")
-    weakest = comp.head(3)[["Competencia", "brecha_pp", "acierto_sede_pct", "acierto_red_pct"]].copy()
-    strongest = comp.tail(3).sort_values("brecha_pp", ascending=False)[["Competencia", "brecha_pp", "acierto_sede_pct", "acierto_red_pct"]].copy()
+    weakest = comp.sort_values("brecha_pp").head(5).rename(columns={
+        "acierto_sede_pct": "% de acierto en la sede",
+        "acierto_red_pct": "% de acierto en Colombia",
+        "brecha_pp": "Brecha frente a Colombia (pp)",
+    })[["Competencia", "% de acierto en la sede", "% de acierto en Colombia", "Brecha frente a Colombia (pp)"]]
 
-    t1, t2 = st.columns(2)
-    with t1:
-        st.markdown(f"**Donde {focus_label} necesita más apoyo**")
-        st.dataframe(weakest, use_container_width=True, hide_index=True)
-    with t2:
-        st.markdown(f"**Donde {focus_label} está más fuerte**")
-        st.dataframe(strongest, use_container_width=True, hide_index=True)
+    strongest = comp.sort_values("brecha_pp", ascending=False).head(5).rename(columns={
+        "acierto_sede_pct": "% de acierto en la sede",
+        "acierto_red_pct": "% de acierto en Colombia",
+        "brecha_pp": "Brecha frente a Colombia (pp)",
+    })[["Competencia", "% de acierto en la sede", "% de acierto en Colombia", "Brecha frente a Colombia (pp)"]]
+
+    st.markdown(f"**Competencias donde {focus_label} necesita más apoyo**")
+    st.dataframe(weakest, use_container_width=True, hide_index=True)
+    st.markdown(f"**Competencias donde {focus_label} muestra mejor desempeño**")
+    st.dataframe(strongest, use_container_width=True, hide_index=True)
 
 
 def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.DataFrame, focus_label: str):
@@ -566,56 +636,60 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
         st.info("No hay datos para esta prueba.")
         return
 
-    red_pct = safe_pct(df_prueba["Acierto"])
+    colombia_pct = safe_pct(df_prueba["Acierto"])
     focus_pct = safe_pct(focus_prueba["Acierto"]) if not focus_prueba.empty else np.nan
-    brecha = focus_pct - red_pct if pd.notna(focus_pct) else np.nan
+    brecha = focus_pct - colombia_pct if pd.notna(focus_pct) else np.nan
 
-    by_comp = add_benchmark(df_prueba, focus_prueba if not focus_prueba.empty else df_prueba.iloc[0:0], "Competencia").sort_values("acierto_red_pct")
-    comp_critica = by_comp.iloc[0]["Competencia"] if not by_comp.empty else "Sin dato"
+    focus_bench = focus_prueba if not focus_prueba.empty else df_prueba.iloc[0:0]
+    by_comp = add_benchmark(df_prueba, focus_bench, "Competencia")
+    by_comp = sort_benchmark(by_comp, "Competencia")
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Promedio red", f"{red_pct:.2f}%")
+    c1.metric("Promedio Colombia", f"{colombia_pct:.2f}%")
     c2.metric(f"Promedio {focus_label}", f"{focus_pct:.2f}%" if pd.notna(focus_pct) else "Sin dato")
-    c3.metric("Brecha", f"{brecha:+.2f} pp" if pd.notna(brecha) else "Sin dato")
-    c4.metric("Competencia crítica", comp_critica)
+    c3.metric("Brecha frente a Colombia", f"{brecha:+.2f} pp" if pd.notna(brecha) else "Sin dato")
+    c4.metric("Competencias evaluadas", f"{safe_nunique(df_prueba['Competencia']):,}")
 
-    c5, c6 = st.columns([1.1, 1])
+    st.markdown("**Comparación por competencia**")
+    melted = by_comp.melt(
+        id_vars="Competencia",
+        value_vars=["acierto_red_pct", "acierto_sede_pct"],
+        var_name="Serie",
+        value_name="Porcentaje"
+    )
+    melted["Serie"] = melted["Serie"].map({
+        "acierto_red_pct": "Colombia",
+        "acierto_sede_pct": focus_label,
+    })
+    melted["orden"] = melted["Competencia"].map(lambda x: competency_sort_key(x)[0])
+    melted = melted.sort_values(["orden", "Competencia"])
+    fig = px.bar(
+        melted,
+        x="Competencia",
+        y="Porcentaje",
+        color="Serie",
+        barmode="group",
+        title=f"{prueba}: competencias, {focus_label} vs Colombia"
+    )
+    fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
+    st.plotly_chart(fig, use_container_width=True)
+
+    c5, c6 = st.columns([1, 1])
     with c5:
-        melted = by_comp.melt(
-            id_vars="Competencia",
-            value_vars=["acierto_red_pct", "acierto_sede_pct"],
-            var_name="Serie",
-            value_name="Porcentaje"
-        )
-        melted["Serie"] = melted["Serie"].map({
-            "acierto_red_pct": "Red",
-            "acierto_sede_pct": focus_label,
-        })
-        fig = px.bar(
-            melted,
-            x="Competencia",
-            y="Porcentaje",
-            color="Serie",
-            barmode="group",
-            title=f"{prueba}: competencias, {focus_label} vs red"
-        )
-        fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
-
-    with c6:
         heat = (
-            df_prueba.groupby(["Sede", "Competencia"], dropna=False)["Acierto"]
+            df_prueba.groupby(["Sede Corta", "Competencia"], dropna=False)["Acierto"]
             .mean()
             .mul(100)
             .round(1)
             .reset_index()
-            .pivot(index="Sede", columns="Competencia", values="Acierto")
         )
+        heat["orden"] = heat["Competencia"].map(lambda x: competency_sort_key(x)[0])
+        heat = heat.sort_values(["Sede Corta", "orden", "Competencia"]).drop(columns="orden")
+        heat = heat.pivot(index="Sede Corta", columns="Competencia", values="Acierto")
         fig = px.imshow(heat, text_auto=True, aspect="auto", title=f"{prueba}: desempeño por sede y competencia")
         st.plotly_chart(fig, use_container_width=True)
 
-    c7, c8 = st.columns([1, 1])
-    with c7:
+    with c6:
         grade_net = (
             df_prueba.groupby("Grado", dropna=False)["Acierto"]
             .mean()
@@ -633,34 +707,21 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
         grade["orden"] = grade["Grado"].map(lambda x: grade_sort_key(x)[0])
         grade = grade.sort_values(["orden", "Grado"])
         melted = grade.melt(id_vars="Grado", value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Porcentaje")
-        melted["Serie"] = melted["Serie"].map({"Acierto": "Red", "Acierto Focus": focus_label})
+        melted["Serie"] = melted["Serie"].map({"Acierto": "Colombia", "Acierto Focus": focus_label})
         fig = px.line(melted, x="Grado", y="Porcentaje", color="Serie", markers=True, title=f"{prueba}: trayectoria por grado")
+        fig.update_layout(yaxis_title="% de acierto", xaxis_title="")
         st.plotly_chart(fig, use_container_width=True)
 
-    with c8:
-        comp = by_comp.sort_values("brecha_pp")
-        fig = px.bar(
-            comp,
-            x="brecha_pp",
-            y="Competencia",
-            orientation="h",
-            title=f"{prueba}: brecha {focus_label} vs red",
-            text="brecha_pp"
-        )
-        fig.add_vline(x=0, line_dash="dash")
-        fig.update_traces(texttemplate="%{text:.2f}")
-        fig.update_layout(xaxis_title="Puntos porcentuales", yaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
-
+    st.markdown("**Tabla de comparación por competencia**")
     st.dataframe(
-        by_comp[["Competencia", "acierto_sede_pct", "acierto_red_pct", "brecha_pp", "estudiantes_red"]],
+        friendly_comp_table(by_comp),
         use_container_width=True,
         hide_index=True
     )
 
 
 def show_pruebas_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
-    st.subheader("Hojas por prueba")
+    st.subheader("Detalle por prueba")
     pruebas = sorted(df["Prueba Base"].dropna().unique().tolist())
     prueba_tabs = st.tabs(pruebas)
 
@@ -688,12 +749,13 @@ def distractor_table(df_scope: pd.DataFrame, question_id: int | float) -> pd.Dat
 
 
 def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
-    st.subheader("Laboratorio psicométrico")
-    scope_options = ["Red"]
-    if focus_label != "Sede focal":
+    st.subheader("Análisis de las respuestas")
+
+    scope_options = ["Colombia"]
+    if focus_label != "Colombia":
         scope_options.append(focus_label)
-    scope = st.radio("Analizar ítems en", scope_options, horizontal=True)
-    selected = df if scope == "Red" else focus_df
+    scope = st.radio("Analizar preguntas en", scope_options, horizontal=True)
+    selected = df if scope == "Colombia" else focus_df
 
     if selected.empty:
         st.warning("No hay datos en el alcance seleccionado.")
@@ -701,134 +763,133 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
 
     items = item_metrics(selected)
     if items.empty:
-        st.warning("No fue posible calcular métricas de ítem.")
+        st.warning("No fue posible calcular métricas por pregunta.")
         return
 
     pruebas = sorted(items["Prueba Base"].dropna().unique().tolist())
-    selected_prueba = st.selectbox("Prueba para análisis psicométrico", pruebas)
+    selected_prueba = st.selectbox("Prueba para analizar", pruebas)
     items_prueba = items[items["Prueba Base"] == selected_prueba].copy()
     scope_prueba_df = selected[selected["Prueba Base"] == selected_prueba].copy()
 
-    summary = psychometric_summary(items_prueba)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Ítems analizados", f"{summary['n_items']:,}")
-    c2.metric("Dificultad en rango útil", f"{summary['pct_target_difficulty']:.1f}%")
-    c3.metric("Buena discriminación", f"{summary['pct_good_discrimination']:.1f}%")
-    c4.metric("Ítems en alerta", f"{summary['pct_alert']:.1f}%")
+    if items_prueba.empty:
+        st.info("No hay preguntas para esta prueba con el filtro actual.")
+        return
 
-    c5, c6, c7, c8 = st.columns(4)
     hardest = items_prueba.nsmallest(1, "dificultad")
     easiest = items_prueba.nlargest(1, "dificultad")
     best_disc = items_prueba.sort_values(["p_bis", "d27"], ascending=[False, False]).head(1)
     worst_disc = items_prueba.sort_values(["p_bis", "d27"], ascending=[True, True]).head(1)
 
-    c5.metric("Pregunta más difícil", str(int(hardest.iloc[0]["QuestionId"])) if not hardest.empty else "Sin dato")
-    c6.metric("Pregunta más fácil", str(int(easiest.iloc[0]["QuestionId"])) if not easiest.empty else "Sin dato")
-    c7.metric("Mayor discriminación", str(int(best_disc.iloc[0]["QuestionId"])) if not best_disc.empty else "Sin dato")
-    c8.metric("Menor discriminación", str(int(worst_disc.iloc[0]["QuestionId"])) if not worst_disc.empty else "Sin dato")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Preguntas analizadas", f"{len(items_prueba):,}")
+    c2.metric("Más difícil", str(int(hardest.iloc[0]["QuestionId"])) if not hardest.empty else "Sin dato")
+    c3.metric("Más fácil", str(int(easiest.iloc[0]["QuestionId"])) if not easiest.empty else "Sin dato")
+    c4.metric("Mayor discriminación", str(int(best_disc.iloc[0]["QuestionId"])) if not best_disc.empty else "Sin dato")
+    c5.metric("Menor discriminación", str(int(worst_disc.iloc[0]["QuestionId"])) if not worst_disc.empty else "Sin dato")
 
-    c9, c10 = st.columns([1.15, 0.85])
-    with c9:
-        scatter = items_prueba.copy()
-        scatter["item_label"] = scatter["QuestionId"].astype(str)
-        fig = px.scatter(
-            scatter,
-            x="dificultad",
-            y="p_bis",
-            color="estado_item",
-            hover_name="item_label",
-            hover_data={"d27": True, "dificultad_pct": True, "Competencia": True},
-            title=f"{selected_prueba}: mapa de dificultad y discriminación"
-        )
-        fig.add_vline(x=0.50, line_dash="dash")
-        fig.add_hline(y=0.20, line_dash="dash")
-        fig.update_layout(xaxis_title="Dificultad (proporción de acierto)", yaxis_title="Correlación biserial puntual")
-        st.plotly_chart(fig, use_container_width=True)
+    scatter = items_prueba.copy()
+    scatter["item_label"] = scatter["QuestionId"].astype(str)
+    fig = px.scatter(
+        scatter,
+        x="dificultad",
+        y="p_bis",
+        color="Competencia",
+        hover_name="item_label",
+        hover_data={"d27": True, "dificultad_pct": True},
+        title=f"{selected_prueba}: mapa de preguntas (dificultad y discriminación)"
+    )
+    fig.add_vline(x=0.50, line_dash="dash")
+    fig.add_hline(y=0.20, line_dash="dash")
+    fig.update_layout(
+        xaxis_title="Dificultad (proporción de acierto)",
+        yaxis_title="Discriminación (point-biserial)"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-    with c10:
-        status = (
-            items_prueba["estado_item"]
-            .value_counts(dropna=False)
-            .reset_index()
-        )
-        status.columns = ["estado_item", "n_items"]
-        fig = px.pie(status, names="estado_item", values="n_items", title="Semáforo de calidad de ítems")
-        st.plotly_chart(fig, use_container_width=True)
+    difficult_table = items_prueba.nsmallest(15, "dificultad")[["QuestionId", "Competencia", "dificultad_pct", "p_bis", "d27"]]
+    difficult_table = difficult_table.rename(columns={
+        "QuestionId": "Pregunta",
+        "dificultad_pct": "% de acierto",
+        "p_bis": "Discriminación (p bis)",
+        "d27": "Discriminación (D27)",
+    })
+    st.markdown("**Preguntas más difíciles**")
+    st.dataframe(difficult_table, use_container_width=True, hide_index=True, height=340)
 
-    c11, c12 = st.columns(2)
-    with c11:
-        hardest15 = items_prueba.nsmallest(15, "dificultad")[["QuestionId", "Competencia", "dificultad_pct", "p_bis", "d27", "estado_item"]]
-        st.markdown("**Ítems más difíciles (TCT)**")
-        st.dataframe(hardest15, use_container_width=True, hide_index=True, height=360)
-    with c12:
-        disc15 = items_prueba.sort_values(["p_bis", "d27"], ascending=False).head(15)[["QuestionId", "Competencia", "dificultad_pct", "p_bis", "d27", "estado_item"]]
-        st.markdown("**Ítems con mejor discriminación**")
-        st.dataframe(disc15, use_container_width=True, hide_index=True, height=360)
+    disc_table = items_prueba.sort_values(["p_bis", "d27"], ascending=False).head(15)[["QuestionId", "Competencia", "dificultad_pct", "p_bis", "d27"]]
+    disc_table = disc_table.rename(columns={
+        "QuestionId": "Pregunta",
+        "dificultad_pct": "% de acierto",
+        "p_bis": "Discriminación (p bis)",
+        "d27": "Discriminación (D27)",
+    })
+    st.markdown("**Preguntas que mejor diferencian desempeños**")
+    st.dataframe(disc_table, use_container_width=True, hide_index=True, height=340)
 
     item_options = items_prueba["QuestionId"].tolist()
     default_q = int(hardest.iloc[0]["QuestionId"]) if not hardest.empty else int(item_options[0])
-    selected_q = st.selectbox("Explorar un ítem", item_options, index=item_options.index(default_q) if default_q in item_options else 0)
+    selected_q = st.selectbox("Explorar una pregunta", item_options, index=item_options.index(default_q) if default_q in item_options else 0)
     item_row = items_prueba[items_prueba["QuestionId"] == selected_q].iloc[0]
 
-    st.markdown("### Radiografía de la pregunta")
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Dificultad", f"{item_row['dificultad_pct']:.2f}%")
-    m2.metric("P bis", f"{item_row['p_bis']:.3f}" if pd.notna(item_row["p_bis"]) else "Sin dato")
-    m3.metric("D27", f"{item_row['d27']:.3f}" if pd.notna(item_row["d27"]) else "Sin dato")
-    m4.metric("Distractor top", f"{item_row['pct_distractor_top']:.2f}%" if pd.notna(item_row["pct_distractor_top"]) else "0.00%")
-    m5.metric("Estado", item_row["estado_item"])
+    st.markdown("### Lectura pedagógica de la pregunta")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("% de acierto", f"{item_row['dificultad_pct']:.2f}%")
+    m2.metric("Discriminación (p bis)", f"{item_row['p_bis']:.3f}" if pd.notna(item_row["p_bis"]) else "Sin dato")
+    m3.metric("Discriminación (D27)", f"{item_row['d27']:.3f}" if pd.notna(item_row["d27"]) else "Sin dato")
+    m4.metric("Distractor más marcado", f"{item_row['pct_distractor_top']:.2f}%" if pd.notna(item_row["pct_distractor_top"]) else "0.00%")
 
     st.markdown(f"**Competencia:** {item_row['Competencia']}")
     st.markdown(f"**Pregunta:** {item_row['Pregunta']}")
 
-    c13, c14 = st.columns([1.1, 0.9])
-    with c13:
-        distract = distractor_table(scope_prueba_df, selected_q)
-        fig = px.bar(
-            distract,
-            x="Respuesta Limpia",
-            y="porcentaje",
-            color="tipo",
-            title="Opciones elegidas por los estudiantes",
-            text="porcentaje"
+    distract = distractor_table(scope_prueba_df, selected_q)
+    if distract.empty:
+        st.info("No hay opciones de respuesta para esta pregunta con el filtro actual.")
+        return
+
+    fig = px.bar(
+        distract,
+        x="Respuesta Limpia",
+        y="porcentaje",
+        color="tipo",
+        title="Opciones de respuesta más marcadas por los estudiantes",
+        text="porcentaje"
+    )
+    fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+    fig.update_layout(xaxis_title="", yaxis_title="% de selecciones")
+    st.plotly_chart(fig, use_container_width=True)
+
+    wrong = distract[distract["tipo"] == "Distractor"].copy()
+    st.markdown("**Distractores que más atrajeron respuestas**")
+    if wrong.empty:
+        st.success("No hay distractores registrados para esta pregunta.")
+    else:
+        st.dataframe(wrong, use_container_width=True, hide_index=True, height=300)
+        top = wrong.iloc[0]
+        st.info(
+            f"La opción distractora más fuerte capturó {top['porcentaje']:.2f}% de las respuestas. "
+            f"Esto puede señalar una confusión frecuente y útil para orientar la retroalimentación docente."
         )
-        fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-        fig.update_layout(xaxis_title="", yaxis_title="% de selecciones")
-        st.plotly_chart(fig, use_container_width=True)
 
-    with c14:
-        wrong = distract[distract["tipo"] == "Distractor"].copy()
-        st.markdown("**Distractores que más atrajeron respuestas**")
-        if wrong.empty:
-            st.success("No hay distractores registrados para este ítem.")
-        else:
-            st.dataframe(wrong, use_container_width=True, hide_index=True, height=300)
-            top = wrong.iloc[0]
-            st.info(
-                f"El distractor más fuerte capturó {top['porcentaje']:.2f}% de las respuestas del ítem. "
-                f"Si concentra mucho volumen, conviene revisar si el error revela una confusión conceptual específica."
-            )
-
-    st.markdown("**Interpretación pedagógica sugerida**")
+    st.markdown("**Sugerencia de lectura docente**")
     notes = []
     if item_row["dificultad"] < 0.30:
-        notes.append("Es un ítem de alta exigencia. Útil para detectar vacíos conceptuales, pero conviene revisar si el enunciado o la clave generan ruido.")
+        notes.append("Es una pregunta exigente. Conviene revisar si el contenido ya fue trabajado con suficiente profundidad o si el enunciado requiere ajuste.")
     elif item_row["dificultad"] > 0.80:
-        notes.append("Es un ítem muy accesible. Sirve para verificar aprendizajes básicos, aunque discrimina menos si casi todos aciertan.")
+        notes.append("Es una pregunta accesible. Sirve para verificar aprendizajes básicos, aunque suele diferenciar menos entre estudiantes.")
     else:
-        notes.append("Tiene una dificultad pedagógicamente útil: permite ver diferencias reales de dominio sin bloquear a la mayoría.")
+        notes.append("Tiene una dificultad equilibrada y ayuda a observar diferencias reales de comprensión.")
     if pd.notna(item_row["p_bis"]) and item_row["p_bis"] < 0:
-        notes.append("La discriminación negativa sugiere una alerta: estudiantes de mejor desempeño fallan más que los demás. Vale la pena revisar clave, redacción o alineación curricular.")
+        notes.append("La discriminación negativa es una alerta. Vale la pena revisar la clave, el enunciado o la alineación con lo enseñado.")
     elif pd.notna(item_row["p_bis"]) and item_row["p_bis"] >= 0.20:
-        notes.append("La discriminación es sana: el ítem separa razonablemente a quienes dominan mejor el contenido.")
+        notes.append("La pregunta diferencia razonablemente entre niveles de desempeño.")
     if pd.notna(item_row["pct_distractor_top"]) and item_row["pct_distractor_top"] >= 25:
-        notes.append("El distractor principal es muy potente. Ese error probablemente representa una idea alternativa extendida en el aula.")
+        notes.append("El distractor principal es muy atractivo. Puede revelar un error conceptual muy extendido que merece refuerzo en clase.")
     for note in notes:
         st.write(f"- {note}")
 
 
 def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
-    st.subheader("Antigüedad y trayectoria")
+    st.subheader("Análisis de antigüedad del estudiante")
 
     net = add_benchmark(df.dropna(subset=["Antiguedad"]), focus_df.dropna(subset=["Antiguedad"]), "Antiguedad")
     if net.empty:
@@ -845,7 +906,7 @@ def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: s
             value_name="Porcentaje"
         )
         melted["Serie"] = melted["Serie"].map({
-            "acierto_red_pct": "Red",
+            "acierto_red_pct": "Colombia",
             "acierto_sede_pct": focus_label,
         })
         fig = px.line(melted, x="Antiguedad", y="Porcentaje", color="Serie", markers=True, title="Desempeño por antigüedad")
@@ -853,13 +914,13 @@ def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: s
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
-        fig = px.bar(net, x="Antiguedad", y="brecha_pp", title=f"Brecha por antigüedad: {focus_label} vs red", text="brecha_pp")
+        fig = px.bar(net, x="Antiguedad", y="brecha_pp", title=f"Brecha por antigüedad: {focus_label} vs Colombia", text="brecha_pp")
         fig.add_hline(y=0, line_dash="dash")
         fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
         fig.update_layout(yaxis_title="Puntos porcentuales", xaxis_title="Años de antigüedad")
         st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("**Cruce antigüedad x prueba**")
+    st.markdown("**Cruce de antigüedad por prueba en la sede focal**")
     heat = (
         focus_df.dropna(subset=["Antiguedad"])
         .groupby(["Antiguedad", "Prueba Base"], dropna=False)["Acierto"]
@@ -927,8 +988,8 @@ def show_exports_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str)
         )
 
     st.markdown("**Banco psicométrico agregado**")
-    scope_choice = st.radio("Fuente del banco", ["Red", focus_label], horizontal=True)
-    table = item_net if scope_choice == "Red" else item_focus
+    scope_choice = st.radio("Fuente del banco", ["Colombia", focus_label], horizontal=True)
+    table = item_net if scope_choice == "Colombia" else item_focus
     if table.empty:
         st.info("No hay datos para el banco seleccionado.")
     else:
@@ -951,6 +1012,21 @@ def show_exports_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str)
 
 def apply_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
     st.sidebar.header("Enfoque del tablero")
+
+    sedes_base = (
+        df[["Sede", "Sede Corta"]]
+        .dropna()
+        .drop_duplicates()
+        .sort_values("Sede Corta")
+    )
+    sede_labels = ["Todas las sedes"]
+    label_to_sede = {"Todas las sedes": None}
+    for _, row in sedes_base.iterrows():
+        sede_labels.append(row["Sede Corta"])
+        label_to_sede[row["Sede Corta"]] = row["Sede"]
+
+    default_index = 1 if len(sede_labels) > 1 else 0
+    sede_focal_label = st.sidebar.selectbox("Sede focal", sede_labels, index=default_index)
 
     grades = sorted(df["Grado"].dropna().unique().tolist(), key=grade_sort_key)
     selected_grades = st.sidebar.multiselect("Grado", grades, default=grades)
@@ -976,22 +1052,20 @@ def apply_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
     if selected_pruebas:
         filtered = filtered[filtered["Prueba Base"].isin(selected_pruebas)]
 
-    sedes = sorted(filtered["Sede"].dropna().unique().tolist())
-    sede_focal = st.sidebar.selectbox("Sede focal", ["Toda la red"] + sedes)
-
-    if sede_focal == "Toda la red":
+    sede_value = label_to_sede.get(sede_focal_label)
+    if sede_value is None:
         focus_df = filtered.copy()
-        focus_label = "Sede focal"
+        focus_label = "Colombia"
     else:
-        focus_df = filtered[filtered["Sede"] == sede_focal].copy()
-        focus_label = sede_focal
+        focus_df = filtered[filtered["Sede"] == sede_value].copy()
+        focus_label = sede_focal_label
 
     return filtered, focus_df, focus_label
 
 
 def main():
-    st.title("Visualizador pedagógico y psicométrico")
-    st.caption("Diseñado para lectura docente: más señales útiles, menos ruido. Aquí los datos hablan con gráficos y los ítems dejan huellas.")
+    st.title("Evaluación Diagnóstica 2026 Calendario A")
+    st.caption("Tablero pedagógico para comparar el desempeño de una sede frente a Colombia y leer mejor lo que cuentan las preguntas.")
 
     local_file = load_default_file_if_exists()
 
@@ -1019,10 +1093,10 @@ def main():
     with st.expander("Qué aporta este tablero", expanded=False):
         st.markdown(
             """
-            - Resume resultados globales de la red y de una sede focal.
+            - Resume el desempeño global de Colombia y de una sede focal.
             - Compara sedes, pruebas, grados, competencias y antigüedad.
-            - Despliega un laboratorio psicométrico con dificultad, discriminación y distractores.
-            - Prioriza resultados agregados para decisiones de aula, acompañamiento y planeación.
+            - Muestra qué preguntas fueron más difíciles, más fáciles y qué opciones atrajeron más respuestas.
+            - Prioriza una lectura pedagógica útil para docentes y directivos.
             """
         )
 
@@ -1034,10 +1108,9 @@ def main():
 
     tabs = st.tabs([
         "Tablero directivo",
-        "Hojas por prueba",
-        "Laboratorio psicométrico",
-        "Antigüedad",
-        "Descargas"
+        "Detalle por prueba",
+        "Análisis de las respuestas",
+        "Análisis de antigüedad del estudiante"
     ])
 
     with tabs[0]:
@@ -1048,8 +1121,6 @@ def main():
         show_psychometrics_tab(filtered, focus_df, focus_label)
     with tabs[3]:
         show_antiguedad_tab(filtered, focus_df, focus_label)
-    with tabs[4]:
-        show_exports_tab(filtered, focus_df, focus_label)
 
 
 if __name__ == "__main__":

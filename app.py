@@ -505,6 +505,64 @@ def psychometric_summary(item_df: pd.DataFrame) -> dict:
     }
 
 
+def make_compact_gauge(value: float) -> go.Figure:
+    gauge_value = float(np.clip(value, 0, 100))
+    fig = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=gauge_value,
+            number={"suffix": "%", "font": {"size": 20, "color": "#f8fafc"}},
+            gauge={
+                "axis": {
+                    "range": [0, 100],
+                    "tickvals": [0, 25, 50, 75, 100],
+                    "tickfont": {"size": 10, "color": "#cbd5e1"},
+                },
+                "bar": {"color": "#16a34a", "thickness": 0.30},
+                "bgcolor": "rgba(0,0,0,0)",
+                "borderwidth": 0,
+                "steps": [
+                    {"range": [0, 40], "color": "#3f1d1d"},
+                    {"range": [40, 60], "color": "#4a3a11"},
+                    {"range": [60, 80], "color": "#183225"},
+                    {"range": [80, 100], "color": "#17324d"},
+                ],
+            },
+        )
+    )
+    fig.update_layout(
+        height=165,
+        margin=dict(l=6, r=6, t=6, b=0),
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#e2e8f0"),
+    )
+    return fig
+
+
+def render_kpi_block(title: str, main_text: str, gauge_value: float, chip_text: str | None = None, chip_positive: bool = True) -> None:
+    chip_html = ""
+    if chip_text:
+        chip_bg = "rgba(22, 163, 74, 0.22)" if chip_positive else "rgba(220, 38, 38, 0.22)"
+        chip_color = "#4ade80" if chip_positive else "#fca5a5"
+        chip_html = f"""
+        <div style=\"display:inline-block; margin-top:0.35rem; padding:0.22rem 0.55rem; border-radius:999px; background:{chip_bg}; color:{chip_color}; font-size:0.95rem; font-weight:600;\">
+            {chip_text}
+        </div>
+        """
+
+    st.markdown(
+        f"""
+        <div style=\"padding-top:0.1rem;\">
+            <div style=\"font-size:1.15rem; font-weight:600; color:#f8fafc; line-height:1.2; margin-bottom:0.35rem;\">{title}</div>
+            <div style=\"font-size:2.25rem; font-weight:700; color:#ffffff; line-height:1.05; word-break:break-word;\">{main_text}</div>
+            {chip_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.plotly_chart(make_compact_gauge(gauge_value), use_container_width=True, config={"displayModeBar": False})
+
+
 def make_indicator(title: str, value: float, delta: float | None = None, suffix: str = "%", reference: float | None = None) -> go.Figure:
     fig = go.Figure()
     indicator_kwargs = dict(
@@ -550,10 +608,32 @@ def benchmark_cards(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
     prueba_critica_pct = float(by_prueba_critica.iloc[0]["Acierto"]) if not by_prueba_critica.empty else 0.0
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Promedio Colombia", f"{colombia_pct:.1f}%")
-    c2.metric(f"Promedio {focus_label}", f"{focus_pct:.1f}%", delta=f"{brecha:+.2f} pp")
-    c3.metric("Prueba con mayor rendimiento", f"{prueba_destacada}", delta=f"{prueba_destacada_pct:.1f}%")
-    c4.metric("Prueba con menor rendimiento", f"{prueba_critica}", delta=f"{prueba_critica_pct:.1f}%")
+    with c1:
+        render_kpi_block("Promedio Colombia", f"{colombia_pct:.1f}%", colombia_pct)
+    with c2:
+        render_kpi_block(
+            f"Promedio {focus_label}",
+            f"{focus_pct:.1f}%",
+            focus_pct,
+            chip_text=f"{brecha:+.2f} pp",
+            chip_positive=brecha >= 0,
+        )
+    with c3:
+        render_kpi_block(
+            "Prueba con mayor rendimiento",
+            str(prueba_destacada),
+            prueba_destacada_pct,
+            chip_text=f"{prueba_destacada_pct:.1f}%",
+            chip_positive=True,
+        )
+    with c4:
+        render_kpi_block(
+            "Prueba con menor rendimiento",
+            str(prueba_critica),
+            prueba_critica_pct,
+            chip_text=f"{prueba_critica_pct:.1f}%",
+            chip_positive=prueba_critica_pct >= colombia_pct,
+        )
 
 
 def render_radar_cards(df: pd.DataFrame):
@@ -607,7 +687,13 @@ def render_radar_cards(df: pd.DataFrame):
         ))
         fig.update_layout(
             title=f"Perfil de {sede_label} frente a Colombia",
-            polar=dict(radialaxis=dict(range=[0, 100], tickfont=dict(size=10))),
+            polar=dict(
+                radialaxis=dict(
+                    range=[30, 100],
+                    tickvals=[30, 40, 50, 60, 70, 80, 90, 100],
+                    tickfont=dict(size=10),
+                )
+            ),
             showlegend=True,
             height=380,
             margin=dict(l=30, r=30, t=60, b=20),

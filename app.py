@@ -1362,15 +1362,11 @@ def apply_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
         .drop_duplicates()
         .sort_values("Sede Corta")
     )
-    sede_labels = ["Todas las sedes"]
-    label_to_sede = {"Todas las sedes": None}
-    for _, row in sedes_base.iterrows():
-        sede_labels.append(row["Sede Corta"])
-        label_to_sede[row["Sede Corta"]] = row["Sede"]
+    sede_labels = sedes_base["Sede Corta"].tolist()
+    label_to_sede = {row["Sede Corta"]: row["Sede"] for _, row in sedes_base.iterrows()}
 
-    default_index = 1 if len(sede_labels) > 1 else 0
-    sede_focal_label = st.sidebar.selectbox("Sede focal", sede_labels, index=default_index)
-
+    sede_focal_label = st.sidebar.selectbox("Sede focal", sede_labels, index=0)
+    
     grades = sorted(df["Grado"].dropna().unique().tolist(), key=grade_sort_key)
     selected_grades = st.sidebar.multiselect("Grado", grades, default=grades)
 

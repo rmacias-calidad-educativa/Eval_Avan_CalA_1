@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -269,12 +268,20 @@ def prepare_data(raw: pd.DataFrame) -> pd.DataFrame:
 def add_benchmark(df: pd.DataFrame, focus_df: pd.DataFrame, dim: str) -> pd.DataFrame:
     net = (
         df.groupby(dim, dropna=False)
-        .agg(acierto_red=("Acierto", "mean"), estudiantes_red=("ID Estudiante", "nunique"), respuestas_red=("Acierto", "size"))
+        .agg(
+            acierto_red=("Acierto", "mean"),
+            estudiantes_red=("ID Estudiante", "nunique"),
+            respuestas_red=("Acierto", "size")
+        )
         .reset_index()
     )
     focus = (
         focus_df.groupby(dim, dropna=False)
-        .agg(acierto_sede=("Acierto", "mean"), estudiantes_sede=("ID Estudiante", "nunique"), respuestas_sede=("Acierto", "size"))
+        .agg(
+            acierto_sede=("Acierto", "mean"),
+            estudiantes_sede=("ID Estudiante", "nunique"),
+            respuestas_sede=("Acierto", "size")
+        )
         .reset_index()
     )
     out = net.merge(focus, on=dim, how="left")
@@ -319,6 +326,100 @@ def safe_pct(series: pd.Series) -> float:
 
 def safe_nunique(series: pd.Series) -> int:
     return int(series.nunique()) if len(series) else 0
+
+
+def get_theme_tokens() -> dict:
+    base = (st.get_option("theme.base") or "light").lower()
+    primary = st.get_option("theme.primaryColor") or ("#60a5fa" if base == "dark" else "#2563eb")
+    text = st.get_option("theme.textColor") or ("#f8fafc" if base == "dark" else "#0f172a")
+    background = st.get_option("theme.backgroundColor") or ("#0e1117" if base == "dark" else "#ffffff")
+    secondary_bg = st.get_option("theme.secondaryBackgroundColor") or ("#1f2937" if base == "dark" else "#f8fafc")
+
+    return {
+        "base": base,
+        "primary": primary,
+        "secondary": "#f59e0b" if base == "dark" else "#d97706",
+        "text": text,
+        "background": background,
+        "secondary_bg": secondary_bg,
+        "muted": "#94a3b8" if base == "dark" else "#64748b",
+        "grid": "rgba(148, 163, 184, 0.28)" if base == "dark" else "rgba(51, 65, 85, 0.18)",
+        "success": "#22c55e" if base == "dark" else "#15803d",
+        "warning": "#f59e0b" if base == "dark" else "#b45309",
+        "danger": "#f87171" if base == "dark" else "#dc2626",
+        "plotly_template": "plotly_dark" if base == "dark" else "plotly_white",
+        "card_bg": "rgba(30, 41, 59, 0.32)" if base == "dark" else "rgba(248, 250, 252, 0.96)",
+        "card_border": "rgba(148, 163, 184, 0.22)" if base == "dark" else "rgba(100, 116, 139, 0.22)",
+        "heat_scale": [
+            [0.0, "#7f1d1d" if base == "dark" else "#fee2e2"],
+            [0.5, "#d97706" if base == "dark" else "#fde68a"],
+            [1.0, "#16a34a" if base == "dark" else "#15803d"],
+        ],
+        "gauge_steps": (
+            [
+                {"range": [0, 40], "color": "#3f1d1d"},
+                {"range": [40, 60], "color": "#4a3a11"},
+                {"range": [60, 80], "color": "#183225"},
+                {"range": [80, 100], "color": "#17324d"},
+            ]
+            if base == "dark"
+            else [
+                {"range": [0, 40], "color": "#fee2e2"},
+                {"range": [40, 60], "color": "#fef3c7"},
+                {"range": [60, 80], "color": "#dcfce7"},
+                {"range": [80, 100], "color": "#dbeafe"},
+            ]
+        ),
+    }
+
+
+def apply_accessible_figure_style(fig: go.Figure, theme: dict) -> go.Figure:
+    fig.update_layout(
+        template=theme["plotly_template"],
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=theme["text"]),
+        legend=dict(font=dict(color=theme["text"])),
+        margin=dict(l=20, r=20, t=60, b=20),
+    )
+    fig.update_xaxes(
+        showgrid=False,
+        tickfont=dict(color=theme["text"]),
+        title_font=dict(color=theme["text"]),
+        linecolor=theme["grid"],
+    )
+    fig.update_yaxes(
+        gridcolor=theme["grid"],
+        zerolinecolor=theme["grid"],
+        tickfont=dict(color=theme["text"]),
+        title_font=dict(color=theme["text"]),
+    )
+    return fig
+
+
+def render_theme_metric_card(title: str, value: str, subtitle: str, theme: dict) -> None:
+    st.markdown(
+        f"""
+        <div style="
+            background:{theme['card_bg']};
+            border:1px solid {theme['card_border']};
+            border-radius:14px;
+            padding:1rem 1.05rem;
+            min-height:118px;
+        ">
+            <div style="font-size:0.95rem; color:{theme['muted']}; margin-bottom:0.35rem;">
+                {title}
+            </div>
+            <div style="font-size:2rem; font-weight:700; color:{theme['text']}; line-height:1.1;">
+                {value}
+            </div>
+            <div style="font-size:0.9rem; color:{theme['muted']}; margin-top:0.35rem;">
+                {subtitle}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 @st.cache_data(show_spinner=False)
@@ -463,17 +564,17 @@ def item_metrics(df_scope: pd.DataFrame) -> pd.DataFrame:
 
     def item_flag(row: pd.Series) -> str:
         p = row["dificultad"]
-        pb = row["p_bis"]
-        d27 = row["d27"]
+        pbv = row["p_bis"]
+        d27v = row["d27"]
         if pd.isna(p):
             return "Revisar"
-        if ((pd.notna(pb) and pb < 0) or (pd.notna(d27) and d27 < 0)):
+        if ((pd.notna(pbv) and pbv < 0) or (pd.notna(d27v) and d27v < 0)):
             return "Alerta psicométrica"
-        if p < 0.20 and ((pd.isna(pb) or pb < 0.15) and (pd.isna(d27) or d27 < 0.15)):
+        if p < 0.20 and ((pd.isna(pbv) or pbv < 0.15) and (pd.isna(d27v) or d27v < 0.15)):
             return "Posible ítem muy complejo o ambiguo"
-        if p > 0.90 and ((pd.isna(pb) or pb < 0.10) and (pd.isna(d27) or d27 < 0.10)):
+        if p > 0.90 and ((pd.isna(pbv) or pbv < 0.10) and (pd.isna(d27v) or d27v < 0.10)):
             return "Posible ítem demasiado fácil"
-        if pd.notna(pb) and pb >= 0.30 and 0.30 <= p <= 0.80:
+        if pd.notna(pbv) and pbv >= 0.30 and 0.30 <= p <= 0.80:
             return "Buen ítem"
         return "Revisar"
 
@@ -506,27 +607,23 @@ def psychometric_summary(item_df: pd.DataFrame) -> dict:
 
 
 def make_compact_gauge(value: float) -> go.Figure:
+    theme = get_theme_tokens()
     gauge_value = float(np.clip(value, 0, 100))
     fig = go.Figure(
         go.Indicator(
             mode="gauge+number",
             value=gauge_value,
-            number={"suffix": "%", "font": {"size": 20, "color": "#f8fafc"}},
+            number={"suffix": "%", "font": {"size": 20, "color": theme["text"]}},
             gauge={
                 "axis": {
                     "range": [0, 100],
                     "tickvals": [0, 25, 50, 75, 100],
-                    "tickfont": {"size": 10, "color": "#cbd5e1"},
+                    "tickfont": {"size": 10, "color": theme["muted"]},
                 },
-                "bar": {"color": "#16a34a", "thickness": 0.30},
+                "bar": {"color": theme["success"], "thickness": 0.30},
                 "bgcolor": "rgba(0,0,0,0)",
                 "borderwidth": 0,
-                "steps": [
-                    {"range": [0, 40], "color": "#3f1d1d"},
-                    {"range": [40, 60], "color": "#4a3a11"},
-                    {"range": [60, 80], "color": "#183225"},
-                    {"range": [80, 100], "color": "#17324d"},
-                ],
+                "steps": theme["gauge_steps"],
             },
         )
     )
@@ -534,27 +631,35 @@ def make_compact_gauge(value: float) -> go.Figure:
         height=165,
         margin=dict(l=6, r=6, t=6, b=0),
         paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#e2e8f0"),
+        font=dict(color=theme["text"]),
     )
     return fig
 
 
 def render_kpi_block(title: str, main_text: str, gauge_value: float, chip_text: str | None = None, chip_positive: bool = True) -> None:
+    theme = get_theme_tokens()
+
     chip_html = ""
     if chip_text:
-        chip_bg = "rgba(22, 163, 74, 0.22)" if chip_positive else "rgba(220, 38, 38, 0.22)"
-        chip_color = "#4ade80" if chip_positive else "#fca5a5"
+        chip_bg = "rgba(22, 163, 74, 0.18)" if chip_positive else "rgba(220, 38, 38, 0.18)"
+        chip_color = theme["success"] if chip_positive else theme["danger"]
         chip_html = f"""
-        <div style=\"display:inline-block; margin-top:0.35rem; padding:0.22rem 0.55rem; border-radius:999px; background:{chip_bg}; color:{chip_color}; font-size:0.95rem; font-weight:600;\">
+        <div style="display:inline-block; margin-top:0.35rem; padding:0.22rem 0.55rem; border-radius:999px; background:{chip_bg}; color:{chip_color}; font-size:0.95rem; font-weight:600;">
             {chip_text}
         </div>
         """
 
     st.markdown(
         f"""
-        <div style=\"padding-top:0.1rem;\">
-            <div style=\"font-size:1.15rem; font-weight:600; color:#f8fafc; line-height:1.2; margin-bottom:0.35rem;\">{title}</div>
-            <div style=\"font-size:2.25rem; font-weight:700; color:#ffffff; line-height:1.05; word-break:break-word;\">{main_text}</div>
+        <div style="
+            background:{theme['card_bg']};
+            border:1px solid {theme['card_border']};
+            border-radius:14px;
+            padding:0.9rem 1rem;
+            min-height:118px;
+        ">
+            <div style="font-size:1.05rem; font-weight:600; color:{theme['muted']}; line-height:1.2; margin-bottom:0.35rem;">{title}</div>
+            <div style="font-size:2.1rem; font-weight:700; color:{theme['text']}; line-height:1.05; word-break:break-word;">{main_text}</div>
             {chip_html}
         </div>
         """,
@@ -564,27 +669,23 @@ def render_kpi_block(title: str, main_text: str, gauge_value: float, chip_text: 
 
 
 def make_indicator(title: str, value: float, delta: float | None = None, suffix: str = "%", reference: float | None = None) -> go.Figure:
+    theme = get_theme_tokens()
     fig = go.Figure()
     indicator_kwargs = dict(
         mode="number+gauge" if delta is None else "number+delta+gauge",
         value=float(value),
-        title={"text": title, "font": {"size": 18}},
-        number={"suffix": suffix},
+        title={"text": title, "font": {"size": 18, "color": theme["text"]}},
+        number={"suffix": suffix, "font": {"color": theme["text"]}},
         gauge={
-            "axis": {"range": [0, 100]},
-            "bar": {"thickness": 0.35},
-            "steps": [
-                {"range": [0, 40], "color": "#fde2e4"},
-                {"range": [40, 60], "color": "#fff1c9"},
-                {"range": [60, 80], "color": "#dff7e3"},
-                {"range": [80, 100], "color": "#d9f0ff"},
-            ],
+            "axis": {"range": [0, 100], "tickfont": {"color": theme["muted"]}},
+            "bar": {"thickness": 0.35, "color": theme["primary"]},
+            "steps": theme["gauge_steps"],
         },
     )
     if delta is not None:
         indicator_kwargs["delta"] = {"reference": float(reference if reference is not None else value - delta), "valueformat": ".2f"}
     fig.add_trace(go.Indicator(**indicator_kwargs))
-    fig.update_layout(height=220, margin=dict(l=18, r=18, t=55, b=10))
+    fig.update_layout(height=220, margin=dict(l=18, r=18, t=55, b=10), paper_bgcolor="rgba(0,0,0,0)")
     return fig
 
 
@@ -637,6 +738,8 @@ def benchmark_cards(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
 
 
 def render_radar_cards(df: pd.DataFrame):
+    theme = get_theme_tokens()
+
     sedes = (
         df[["Sede", "Sede Corta"]]
         .dropna()
@@ -656,6 +759,7 @@ def render_radar_cards(df: pd.DataFrame):
         .fillna(0)
     )
     radar_cols = st.columns(2)
+
     for idx, (_, row) in enumerate(sedes.iterrows()):
         sede_value = row["Sede"]
         sede_label = row["Sede Corta"]
@@ -674,25 +778,34 @@ def render_radar_cards(df: pd.DataFrame):
             theta=theta,
             fill="toself",
             name="Colombia",
-            line=dict(color="#334155"),
-            fillcolor="rgba(51, 65, 85, 0.15)",
+            line=dict(color=theme["muted"]),
+            fillcolor="rgba(148, 163, 184, 0.12)",
         ))
         fig.add_trace(go.Scatterpolar(
             r=sede_series.tolist() + [float(sede_series.iloc[0])],
             theta=theta,
             fill="toself",
             name=sede_label,
-            line=dict(color="#0284c7"),
-            fillcolor="rgba(2, 132, 199, 0.25)",
+            line=dict(color=theme["primary"]),
+            fillcolor="rgba(37, 99, 235, 0.18)" if theme["base"] == "light" else "rgba(96, 165, 250, 0.18)",
         ))
         fig.update_layout(
+            template=theme["plotly_template"],
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color=theme["text"]),
             title=f"Perfil de {sede_label} frente a Colombia",
             polar=dict(
+                bgcolor="rgba(0,0,0,0)",
                 radialaxis=dict(
                     range=[30, 100],
                     tickvals=[30, 40, 50, 60, 70, 80, 90, 100],
-                    tickfont=dict(size=10),
-                )
+                    tickfont=dict(size=10, color=theme["text"]),
+                    gridcolor=theme["grid"],
+                    linecolor=theme["grid"],
+                ),
+                angularaxis=dict(
+                    tickfont=dict(color=theme["text"])
+                ),
             ),
             showlegend=True,
             height=380,
@@ -700,11 +813,156 @@ def render_radar_cards(df: pd.DataFrame):
         )
         with radar_cols[idx % 2]:
             st.plotly_chart(fig, use_container_width=True)
+
         if idx % 2 == 1 and idx + 1 < len(sedes):
             radar_cols = st.columns(2)
 
 
+def show_network_map_tab(df: pd.DataFrame):
+    st.subheader("Mapa general de la red")
+    st.caption("Vista inicial para entender el rendimiento global, por prueba y por grado, antes de entrar al detalle por sede.")
+
+    if df.empty:
+        st.info("No hay datos para construir el mapa general.")
+        return
+
+    theme = get_theme_tokens()
+
+    global_pct = safe_pct(df["Acierto"])
+    total_students = safe_nunique(df["ID Estudiante"])
+    total_sedes = safe_nunique(df["Sede"])
+
+    by_prueba = (
+        df.groupby("Prueba Base", dropna=False)["Acierto"]
+        .mean()
+        .mul(100)
+        .reset_index(name="Rendimiento")
+        .sort_values("Rendimiento", ascending=False)
+    )
+
+    by_grade = (
+        df.groupby("Grado", dropna=False)["Acierto"]
+        .mean()
+        .mul(100)
+        .reset_index(name="Rendimiento")
+    )
+    by_grade["orden"] = by_grade["Grado"].map(lambda x: grade_sort_key(x)[0])
+    by_grade["Grado Etiqueta"] = by_grade["Grado"].map(grade_display_label)
+    by_grade = by_grade.sort_values(["orden", "Grado"]).reset_index(drop=True)
+
+    heat_df = (
+        df.groupby(["Grado", "Prueba Base"], dropna=False)["Acierto"]
+        .mean()
+        .mul(100)
+        .reset_index(name="Rendimiento")
+    )
+    heat_df["orden"] = heat_df["Grado"].map(lambda x: grade_sort_key(x)[0])
+    heat_df["Grado Etiqueta"] = heat_df["Grado"].map(grade_display_label)
+    heat_df = heat_df.sort_values(["orden", "Grado Etiqueta", "Prueba Base"])
+
+    heat = heat_df.pivot(index="Grado Etiqueta", columns="Prueba Base", values="Rendimiento")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        render_theme_metric_card(
+            "Rendimiento global",
+            f"{global_pct:.1f}%",
+            "Promedio de aciertos de toda la red",
+            theme,
+        )
+    with c2:
+        render_theme_metric_card(
+            "Estudiantes únicos",
+            f"{total_students:,}",
+            "Incluye los filtros activos",
+            theme,
+        )
+    with c3:
+        render_theme_metric_card(
+            "Sedes incluidas",
+            f"{total_sedes:,}",
+            "Cobertura de la red en esta vista",
+            theme,
+        )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        fig = px.bar(
+            by_prueba,
+            x="Prueba Base",
+            y="Rendimiento",
+            text="Rendimiento",
+            title="Rendimiento por prueba",
+            color_discrete_sequence=[theme["primary"]],
+        )
+        fig.add_hline(
+            y=global_pct,
+            line_dash="dash",
+            line_color=theme["muted"],
+            annotation_text="Promedio global",
+            annotation_font_color=theme["text"],
+            annotation_position="top left",
+        )
+        fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+        fig.update_layout(
+            yaxis_title="% de rendimiento",
+            xaxis_title="",
+            yaxis_range=compute_axis_bounds(by_prueba["Rendimiento"]),
+            showlegend=False,
+        )
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        fig = px.line(
+            by_grade,
+            x="Grado Etiqueta",
+            y="Rendimiento",
+            markers=True,
+            title="Rendimiento por grado",
+        )
+        fig.update_traces(
+            line=dict(color=theme["success"], width=3),
+            marker=dict(color=theme["success"], size=9),
+        )
+        fig.add_hline(
+            y=global_pct,
+            line_dash="dash",
+            line_color=theme["muted"],
+            annotation_text="Promedio global",
+            annotation_font_color=theme["text"],
+            annotation_position="top left",
+        )
+        fig.update_layout(
+            yaxis_title="% de rendimiento",
+            xaxis_title="",
+            yaxis_range=compute_axis_bounds(by_grade["Rendimiento"]),
+            showlegend=False,
+        )
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("**Mapa cruzado de grado por prueba**")
+    fig = px.imshow(
+        heat,
+        text_auto=".1f",
+        aspect="auto",
+        color_continuous_scale=theme["heat_scale"],
+        title="Mapa general de rendimiento de la red",
+    )
+    fig.update_layout(
+        xaxis_title="Prueba",
+        yaxis_title="Grado",
+        coloraxis_colorbar_title="%"
+    )
+    apply_accessible_figure_style(fig, theme)
+    st.plotly_chart(fig, use_container_width=True)
+
+
 def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
+    theme = get_theme_tokens()
+
     st.subheader("Resultados globales")
 
     with st.expander("Cómo leer esta pestaña", expanded=False):
@@ -737,13 +995,15 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
             color="destacado",
             title="% de rendimiento por sede",
             text="acierto_colombia_pct",
-            color_discrete_map={focus_label: "#0284c7", "Otras sedes": "#94a3b8"},
+            color_discrete_map={focus_label: theme["primary"], "Otras sedes": theme["muted"]},
         )
         promedio_colombia = safe_pct(df["Acierto"])
         fig.add_hline(
             y=promedio_colombia,
             line_dash="dash",
+            line_color=theme["secondary"],
             annotation_text="Promedio Colombia",
+            annotation_font_color=theme["text"],
             annotation_position="top left"
         )
         y_range = compute_axis_bounds(by_sede["acierto_colombia_pct"])
@@ -751,6 +1011,7 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
             y_range[1] = min(100.0, float(np.ceil(promedio_colombia + 3)))
         fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
         fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="", yaxis_range=y_range, showlegend=False)
+        apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
@@ -771,9 +1032,11 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
             y="Porcentaje",
             color="Serie",
             markers=True,
-            title=f"% de rendimiento por prueba: {focus_label} vs Colombia"
+            title=f"% de rendimiento por prueba: {focus_label} vs Colombia",
+            color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]},
         )
         fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="")
+        apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Perfil por sede frente a Colombia**")
@@ -788,7 +1051,14 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
         .reset_index()
         .pivot(index="Sede Corta", columns="Prueba Base", values="Acierto")
     )
-    fig = px.imshow(heat, text_auto=True, aspect="auto", title="% de rendimiento por sede y prueba")
+    fig = px.imshow(
+        heat,
+        text_auto=True,
+        aspect="auto",
+        title="% de rendimiento por sede y prueba",
+        color_continuous_scale=theme["heat_scale"],
+    )
+    apply_accessible_figure_style(fig, theme)
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Trayectoria por grado: sede focal vs Colombia**")
@@ -808,10 +1078,26 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
     merged = by_grade_net.merge(by_grade_focus, on="Grado", how="left")
     merged["orden"] = merged["Grado"].map(lambda x: grade_sort_key(x)[0])
     merged = merged.sort_values(["orden", "Grado"])
-    melted = merged.melt(id_vars="Grado", value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Porcentaje")
+    merged["Grado Etiqueta"] = merged["Grado"].map(grade_display_label)
+
+    melted = merged.melt(
+        id_vars=["Grado", "Grado Etiqueta"],
+        value_vars=["Acierto", "Acierto Focus"],
+        var_name="Serie",
+        value_name="Porcentaje"
+    )
     melted["Serie"] = melted["Serie"].map({"Acierto": "Colombia", "Acierto Focus": focus_label})
-    fig = px.line(melted, x="Grado", y="Porcentaje", color="Serie", markers=True, title=f"Trayectoria por grado: {focus_label} vs Colombia")
+    fig = px.line(
+        melted,
+        x="Grado Etiqueta",
+        y="Porcentaje",
+        color="Serie",
+        markers=True,
+        title=f"Trayectoria por grado: {focus_label} vs Colombia",
+        color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]},
+    )
     fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="")
+    apply_accessible_figure_style(fig, theme)
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Lectura rápida para docentes y directivos**")
@@ -837,6 +1123,8 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
 
 
 def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.DataFrame, focus_label: str):
+    theme = get_theme_tokens()
+
     if df_prueba.empty:
         st.info("No hay datos para esta prueba.")
         return
@@ -868,15 +1156,18 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
     })
     melted["orden"] = melted["Competencia"].map(lambda x: competency_sort_key(x)[0])
     melted = melted.sort_values(["orden", "Competencia"])
+
     fig = px.bar(
         melted,
         x="Competencia",
         y="Porcentaje",
         color="Serie",
         barmode="group",
-        title=f"{prueba}: competencias, {focus_label} vs Colombia"
+        title=f"{prueba}: competencias, {focus_label} vs Colombia",
+        color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]},
     )
     fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="")
+    apply_accessible_figure_style(fig, theme)
     st.plotly_chart(fig, use_container_width=True)
 
     c5, c6 = st.columns([1, 1])
@@ -891,7 +1182,14 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
         heat["orden"] = heat["Competencia"].map(lambda x: competency_sort_key(x)[0])
         heat = heat.sort_values(["Sede Corta", "orden", "Competencia"]).drop(columns="orden")
         heat = heat.pivot(index="Sede Corta", columns="Competencia", values="Acierto")
-        fig = px.imshow(heat, text_auto=True, aspect="auto", title=f"{prueba}: desempeño por sede y competencia")
+        fig = px.imshow(
+            heat,
+            text_auto=True,
+            aspect="auto",
+            title=f"{prueba}: desempeño por sede y competencia",
+            color_continuous_scale=theme["heat_scale"],
+        )
+        apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
     with c6:
@@ -911,10 +1209,27 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
         grade = grade_net.merge(grade_focus, on="Grado", how="left")
         grade["orden"] = grade["Grado"].map(lambda x: grade_sort_key(x)[0])
         grade = grade.sort_values(["orden", "Grado"])
-        melted = grade.melt(id_vars="Grado", value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Porcentaje")
+        grade["Grado Etiqueta"] = grade["Grado"].map(grade_display_label)
+
+        melted = grade.melt(
+            id_vars=["Grado", "Grado Etiqueta"],
+            value_vars=["Acierto", "Acierto Focus"],
+            var_name="Serie",
+            value_name="Porcentaje"
+        )
         melted["Serie"] = melted["Serie"].map({"Acierto": "Colombia", "Acierto Focus": focus_label})
-        fig = px.line(melted, x="Grado", y="Porcentaje", color="Serie", markers=True, title=f"{prueba}: trayectoria por grado")
+
+        fig = px.line(
+            melted,
+            x="Grado Etiqueta",
+            y="Porcentaje",
+            color="Serie",
+            markers=True,
+            title=f"{prueba}: trayectoria por grado",
+            color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]},
+        )
         fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="")
+        apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Tabla de comparación por competencia**")
@@ -936,7 +1251,12 @@ def show_pruebas_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str)
             - La trayectoria por grado ayuda a detectar en qué momento cae o mejora el desempeño.
             """
         )
+
     pruebas = sorted(df["Prueba Base"].dropna().unique().tolist())
+    if not pruebas:
+        st.info("No hay pruebas disponibles con el filtro actual.")
+        return
+
     prueba_tabs = st.tabs(pruebas)
 
     for tab, prueba in zip(prueba_tabs, pruebas):
@@ -994,8 +1314,8 @@ def build_option_comparison(question_id: int | float, colombia_df: pd.DataFrame,
     merged = colombia.merge(focus, on=["Respuesta Limpia", "Acierto"], how="outer").fillna(0)
     if merged.empty:
         return merged
+
     merged["tipo"] = np.where(merged["Acierto"] == 1, "Respuesta correcta", "Distractor")
-    merged["color"] = np.where(merged["Acierto"] == 1, "#16a34a", "#94a3b8")
     merged["Opción de respuesta"] = merged["Respuesta Limpia"].map(lambda x: shorten_text(x, 110))
     merged["Opción de respuesta gráfico"] = merged["Opción de respuesta"].map(lambda x: wrap_plot_label(x, width=42, max_lines=4))
     merged["pico"] = merged[["pct_colombia", "pct_sede"]].max(axis=1)
@@ -1006,6 +1326,7 @@ def build_option_comparison(question_id: int | float, colombia_df: pd.DataFrame,
 
 
 def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Figure:
+    theme = get_theme_tokens()
     fig = go.Figure()
     if option_comp.empty:
         return fig
@@ -1014,14 +1335,17 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
     x_upper = min(100.0, max(12.0, float(np.ceil(max_pct + 6))))
 
     for _, row in option_comp.iterrows():
+        line_color = theme["success"] if row["tipo"] == "Respuesta correcta" else theme["muted"]
         fig.add_trace(go.Scatter(
             x=[row["pct_colombia"], row["pct_sede"]],
             y=[row["Opción de respuesta gráfico"], row["Opción de respuesta gráfico"]],
             mode="lines",
-            line=dict(color=row["color"], width=4),
+            line=dict(color=line_color, width=4),
             hoverinfo="skip",
             showlegend=False,
         ))
+
+    marker_colors = [theme["success"] if t == "Respuesta correcta" else theme["muted"] for t in option_comp["tipo"]]
 
     fig.add_trace(go.Scatter(
         x=option_comp["pct_colombia"],
@@ -1030,12 +1354,13 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
         name="Colombia",
         text=[f"{v:.1f}%" for v in option_comp["pct_colombia"]],
         textposition="top left",
+        textfont=dict(color=theme["text"]),
         cliponaxis=False,
         marker=dict(
             symbol="circle",
             size=12,
-            color=option_comp["color"].tolist(),
-            line=dict(color="#0f172a", width=1),
+            color=marker_colors,
+            line=dict(color=theme["background"], width=1),
         ),
     ))
     fig.add_trace(go.Scatter(
@@ -1045,34 +1370,52 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
         name=focus_label,
         text=[f"{v:.1f}%" for v in option_comp["pct_sede"]],
         textposition="top right",
+        textfont=dict(color=theme["text"]),
         cliponaxis=False,
         marker=dict(
             symbol="diamond",
             size=12,
-            color=option_comp["color"].tolist(),
-            line=dict(color="#0f172a", width=1),
+            color=marker_colors,
+            line=dict(color=theme["background"], width=1),
         ),
     ))
     fig.update_layout(
+        template=theme["plotly_template"],
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=theme["text"]),
         title=f"Cómo se repartieron las respuestas: {focus_label} vs Colombia",
         xaxis_title="% de estudiantes que marcó la opción",
         yaxis_title="",
         height=max(420, 120 + 95 * len(option_comp)),
         margin=dict(l=10, r=30, t=70, b=20),
-        yaxis=dict(automargin=True, tickfont=dict(size=12)),
-        xaxis=dict(tickfont=dict(size=12), range=[0, x_upper]),
+        yaxis=dict(automargin=True, tickfont=dict(size=12, color=theme["text"])),
+        xaxis=dict(
+            tickfont=dict(size=12, color=theme["text"]),
+            range=[0, x_upper],
+            gridcolor=theme["grid"],
+            zerolinecolor=theme["grid"],
+        ),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1.0),
     )
     return fig
 
 
-def render_compact_summary_card(title: str, value: str, tone: str = "#f8fafc") -> None:
+def render_compact_summary_card(title: str, value: str, tone: str | None = None) -> None:
+    theme = get_theme_tokens()
     body = str(value).replace(" · ", "<br>")
+    tone = tone or theme["text"]
     st.markdown(
         f"""
-        <div style=\"background: rgba(15, 23, 42, 0.38); border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 14px; padding: 0.9rem 0.95rem; min-height: 112px;\">
-            <div style=\"font-size: 0.95rem; color: #cbd5e1; margin-bottom: 0.45rem; line-height: 1.25;\">{title}</div>
-            <div style=\"font-size: 1.45rem; font-weight: 700; color: {tone}; line-height: 1.22; word-break: break-word;\">{body}</div>
+        <div style="
+            background:{theme['card_bg']};
+            border:1px solid {theme['card_border']};
+            border-radius:14px;
+            padding:0.9rem 0.95rem;
+            min-height:112px;
+        ">
+            <div style="font-size:0.95rem; color:{theme['muted']}; margin-bottom:0.45rem; line-height:1.25;">{title}</div>
+            <div style="font-size:1.45rem; font-weight:700; color:{tone}; line-height:1.22; word-break:break-word;">{body}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1080,6 +1423,8 @@ def render_compact_summary_card(title: str, value: str, tone: str = "#f8fafc") -
 
 
 def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
+    theme = get_theme_tokens()
+
     st.subheader("Análisis de las respuestas")
     with st.expander("Cómo leer esta pestaña", expanded=False):
         st.markdown(
@@ -1107,9 +1452,12 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
         return
 
     pruebas = sorted(items["Prueba Base"].dropna().unique().tolist())
+    if not pruebas:
+        st.info("No hay pruebas disponibles con el filtro actual.")
+        return
+
     selected_prueba = st.selectbox("Prueba para analizar", pruebas)
     items_prueba = build_question_bank(items[items["Prueba Base"] == selected_prueba].copy())
-    scope_prueba_df = selected[selected["Prueba Base"] == selected_prueba].copy()
     colombia_prueba_df = df[df["Prueba Base"] == selected_prueba].copy()
     focus_prueba_df = focus_df[focus_df["Prueba Base"] == selected_prueba].copy()
 
@@ -1130,15 +1478,15 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
 
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
-        render_compact_summary_card("Preguntas analizadas", f"{len(items_prueba):,}", tone="#ffffff")
+        render_compact_summary_card("Preguntas analizadas", f"{len(items_prueba):,}", tone=theme["text"])
     with c2:
-        render_compact_summary_card("Pregunta más difícil", _card_label(hardest), tone="#fde68a")
+        render_compact_summary_card("Pregunta más difícil", _card_label(hardest), tone=theme["warning"])
     with c3:
-        render_compact_summary_card("Pregunta más fácil", _card_label(easiest), tone="#bbf7d0")
+        render_compact_summary_card("Pregunta más fácil", _card_label(easiest), tone=theme["success"])
     with c4:
-        render_compact_summary_card("Mayor discriminación", _card_label(best_disc), tone="#bfdbfe")
+        render_compact_summary_card("Mayor discriminación", _card_label(best_disc), tone=theme["primary"])
     with c5:
-        render_compact_summary_card("Menor discriminación", _card_label(worst_disc), tone="#fecaca")
+        render_compact_summary_card("Menor discriminación", _card_label(worst_disc), tone=theme["danger"])
 
     difficult_table = items_prueba[["selector_label", "Competencia", "dificultad_pct", "p_bis", "d27"]].rename(columns={
         "selector_label": "Pregunta",
@@ -1152,6 +1500,7 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
     option_ids = items_prueba["QuestionId"].tolist()
     label_map = dict(zip(items_prueba["QuestionId"], items_prueba["selector_label"]))
     default_q = hardest.iloc[0]["QuestionId"] if not hardest.empty else option_ids[0]
+
     selected_q = st.selectbox(
         "Explorar una pregunta",
         option_ids,
@@ -1170,7 +1519,11 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
     st.markdown(f"**Competencia:** {item_row['Competencia']}")
     st.markdown(f"**Pregunta:** {item_row['Pregunta']}")
 
-    option_comp = build_option_comparison(selected_q, colombia_prueba_df, focus_prueba_df if not focus_prueba_df.empty else colombia_prueba_df)
+    option_comp = build_option_comparison(
+        selected_q,
+        colombia_prueba_df,
+        focus_prueba_df if not focus_prueba_df.empty else colombia_prueba_df
+    )
     if option_comp.empty:
         st.info("No hay opciones de respuesta para esta pregunta con el filtro actual.")
         return
@@ -1193,13 +1546,16 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
         notes.append("Es una pregunta accesible. Sirve para verificar aprendizajes básicos, aunque suele diferenciar menos entre estudiantes.")
     else:
         notes.append("Tiene una dificultad equilibrada y ayuda a observar diferencias reales de comprensión.")
+
     if pd.notna(item_row["p_bis"]) and item_row["p_bis"] < 0:
         notes.append("La discriminación negativa es una alerta. Vale la pena revisar la clave, el enunciado o la alineación con lo enseñado.")
     elif pd.notna(item_row["p_bis"]) and item_row["p_bis"] >= 0.20:
         notes.append("La pregunta diferencia razonablemente entre niveles de desempeño.")
+
     strongest_distractor = option_comp[option_comp["tipo"] == "Distractor"]
     if not strongest_distractor.empty and strongest_distractor.iloc[0]["pct_sede"] >= 25:
         notes.append("El distractor principal está capturando muchas respuestas en la sede focal. Puede revelar una confusión frecuente que merece retroalimentación explícita.")
+
     for note in notes:
         st.write(f"- {note}")
 
@@ -1214,16 +1570,19 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
         hover_data={"d27": True, "dificultad_pct": True},
         title=f"{selected_prueba}: mapa de preguntas (dificultad y discriminación)"
     )
-    fig.add_vline(x=0.50, line_dash="dash")
-    fig.add_hline(y=0.20, line_dash="dash")
+    fig.add_vline(x=0.50, line_dash="dash", line_color=theme["muted"])
+    fig.add_hline(y=0.20, line_dash="dash", line_color=theme["muted"])
     fig.update_layout(
         xaxis_title="Dificultad (proporción de respuestas correctas)",
         yaxis_title="Discriminación (point-biserial)"
     )
+    apply_accessible_figure_style(fig, theme)
     st.plotly_chart(fig, use_container_width=True)
 
 
 def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
+    theme = get_theme_tokens()
+
     st.subheader("Análisis de antigüedad del estudiante")
     with st.expander("Cómo leer esta pestaña", expanded=False):
         st.markdown(
@@ -1241,6 +1600,7 @@ def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: s
 
     net = net.sort_values("Antiguedad")
     c1, c2 = st.columns(2)
+
     with c1:
         melted = net.melt(
             id_vars="Antiguedad",
@@ -1252,15 +1612,36 @@ def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: s
             "acierto_red_pct": "Colombia",
             "acierto_sede_pct": focus_label,
         })
-        fig = px.line(melted, x="Antiguedad", y="Porcentaje", color="Serie", markers=True, title="Desempeño por antigüedad")
+        fig = px.line(
+            melted,
+            x="Antiguedad",
+            y="Porcentaje",
+            color="Serie",
+            markers=True,
+            title="Desempeño por antigüedad",
+            color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]},
+        )
         fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="Años de antigüedad")
+        apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
-        fig = px.bar(net, x="Antiguedad", y="brecha_pp", title=f"Brecha por antigüedad: {focus_label} vs Colombia", text="brecha_pp")
-        fig.add_hline(y=0, line_dash="dash")
+        bar_colors = [theme["success"] if x >= 0 else theme["danger"] for x in net["brecha_pp"]]
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=net["Antiguedad"],
+            y=net["brecha_pp"],
+            text=net["brecha_pp"],
+            marker_color=bar_colors,
+        ))
+        fig.add_hline(y=0, line_dash="dash", line_color=theme["muted"])
         fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-        fig.update_layout(yaxis_title="Puntos porcentuales", xaxis_title="Años de antigüedad")
+        fig.update_layout(
+            title=f"Brecha por antigüedad: {focus_label} vs Colombia",
+            yaxis_title="Puntos porcentuales",
+            xaxis_title="Años de antigüedad",
+        )
+        apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Cruce de antigüedad por prueba en la sede focal**")
@@ -1276,7 +1657,14 @@ def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: s
     if heat.empty:
         st.info("La sede focal no tiene suficiente información en este filtro para el cruce.")
     else:
-        fig = px.imshow(heat, text_auto=True, aspect="auto", title=f"{focus_label}: % de rendimiento por antigüedad y prueba")
+        fig = px.imshow(
+            heat,
+            text_auto=True,
+            aspect="auto",
+            title=f"{focus_label}: % de rendimiento por antigüedad y prueba",
+            color_continuous_scale=theme["heat_scale"],
+        )
+        apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
 
@@ -1362,11 +1750,15 @@ def apply_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
         .drop_duplicates()
         .sort_values("Sede Corta")
     )
+
+    if sedes_base.empty:
+        return df.iloc[0:0], df.iloc[0:0], "Sin sede"
+
     sede_labels = sedes_base["Sede Corta"].tolist()
     label_to_sede = {row["Sede Corta"]: row["Sede"] for _, row in sedes_base.iterrows()}
 
     sede_focal_label = st.sidebar.selectbox("Sede focal", sede_labels, index=0)
-    
+
     grades = sorted(df["Grado"].dropna().unique().tolist(), key=grade_sort_key)
     selected_grades = st.sidebar.multiselect("Grado", grades, default=grades)
 
@@ -1378,13 +1770,9 @@ def apply_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
     pruebas = sorted(df["Prueba Base"].dropna().unique().tolist())
     selected_pruebas = st.sidebar.multiselect("Prueba", pruebas, default=pruebas)
 
-    filtered = df.copy()
-    if selected_grades:
-        filtered = filtered[filtered["Grado"].isin(selected_grades)]
-    if selected_courses:
-        filtered = filtered[filtered["Curso"].isin(selected_courses)]
-    if selected_pruebas:
-        filtered = filtered[filtered["Prueba Base"].isin(selected_pruebas)]
+    filtered = df[df["Grado"].isin(selected_grades)].copy() if selected_grades else df.iloc[0:0].copy()
+    filtered = filtered[filtered["Curso"].isin(selected_courses)].copy() if selected_courses else filtered.iloc[0:0].copy()
+    filtered = filtered[filtered["Prueba Base"].isin(selected_pruebas)].copy() if selected_pruebas else filtered.iloc[0:0].copy()
 
     sede_value = label_to_sede[sede_focal_label]
     focus_df = filtered[filtered["Sede"] == sede_value].copy()
@@ -1417,6 +1805,7 @@ def main():
         st.stop()
 
     tabs = st.tabs([
+        "Mapa general de la red",
         "Tablero directivo",
         "Detalle por prueba",
         "Análisis de las respuestas",
@@ -1424,12 +1813,14 @@ def main():
     ])
 
     with tabs[0]:
-        show_overview_tab(filtered, focus_df, focus_label)
+        show_network_map_tab(filtered)
     with tabs[1]:
-        show_pruebas_tab(filtered, focus_df, focus_label)
+        show_overview_tab(filtered, focus_df, focus_label)
     with tabs[2]:
-        show_psychometrics_tab(filtered, focus_df, focus_label)
+        show_pruebas_tab(filtered, focus_df, focus_label)
     with tabs[3]:
+        show_psychometrics_tab(filtered, focus_df, focus_label)
+    with tabs[4]:
         show_antiguedad_tab(filtered, focus_df, focus_label)
 
 

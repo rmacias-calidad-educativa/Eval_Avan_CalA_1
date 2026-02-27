@@ -1386,13 +1386,9 @@ def apply_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
     if selected_pruebas:
         filtered = filtered[filtered["Prueba Base"].isin(selected_pruebas)]
 
-    sede_value = label_to_sede.get(sede_focal_label)
-    if sede_value is None:
-        focus_df = filtered.copy()
-        focus_label = "Colombia"
-    else:
-        focus_df = filtered[filtered["Sede"] == sede_value].copy()
-        focus_label = sede_focal_label
+    sede_value = label_to_sede[sede_focal_label]
+    focus_df = filtered[filtered["Sede"] == sede_value].copy()
+    focus_label = sede_focal_label
 
     return filtered, focus_df, focus_label
 

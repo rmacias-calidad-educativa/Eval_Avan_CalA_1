@@ -528,43 +528,6 @@ def socio_show_quality_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
     st.markdown('**Aviso útil**')
     st.write("Si ves indicadores completos con 0% de cobertura, el tablero los marcará como 'sin dato' y no como bajo desempeño. Eso evita castigar una sede por un problema de exportación o captura.")
 
-def run_socio_dashboard() -> None:
-    st.title('Vista socioemocional')
-    st.caption('Tablero para leer tendencias de respuesta en los Cuestionarios Auxiliares por indicador y por pregunta.')
-    uploaded = st.sidebar.file_uploader('Cargar base socioemocional', type=['xlsx', 'xls', 'csv'])
-    if uploaded is not None:
-        raw = socio_read_uploaded_file(uploaded)
-        source_name = uploaded.name
-    else:
-        local_file = socio_load_default_file_if_exists()
-        if local_file is None:
-            st.error('No encontré Auxiliares.xlsx. Súbelo manualmente o guárdalo en data/Auxiliares.xlsx')
-            st.stop()
-        raw = socio_read_dataframe_from_path(str(local_file), int(local_file.stat().st_mtime_ns))
-        source_name = local_file.name
-    raw = socio_normalize_columns(raw)
-    missing = socio_validate_columns(raw)
-    if missing:
-        st.error(f"Faltan columnas obligatorias: {', '.join(missing)}")
-        st.stop()
-    with st.expander('Cómo interpreta este tablero', expanded=False):
-        st.markdown('\n            - No trata estas respuestas como **aciertos académicos**.\n            - Calcula un **puntaje ordinal (0-100)** según la escala de cada pregunta.\n            - También muestra **% favorable (top-box)** para detectar focos rápidos.\n            - Si una pregunta no trae respuesta interpretable, se marca como **sin dato** y se refleja en la cobertura.\n            - El tablero compara siempre **sede focal vs red filtrada**.\n            ')
-        st.caption(f'Fuente actual: {source_name}')
-    df = socio_prepare_socio_data(raw)
-    filtered, focus_df, focus_label = socio_apply_socio_filters(df)
-    if filtered.empty:
-        st.warning('No hay datos para la combinación de filtros elegida.')
-        st.stop()
-    tabs = st.tabs(['Mapa general', 'Tablero directivo', 'Preguntas concretas', 'Calidad del dato'])
-    with tabs[0]:
-        socio_show_network_tab(filtered)
-    with tabs[1]:
-        socio_show_indicator_tab(filtered, focus_df, focus_label)
-    with tabs[2]:
-        socio_show_questions_tab(filtered, focus_df, focus_label)
-    with tabs[3]:
-        socio_show_quality_tab(filtered, focus_df, focus_label)
-
 
 REQUIRED_COLUMNS = [
     "Sede", "ID Estudiante", "Edad Estudiante", "Genero", "Grado", "Curso",
@@ -2334,19 +2297,348 @@ def apply_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
     return filtered, focus_df, focus_label
 
 
-def main():
-    dashboard_mode = st.sidebar.radio(
-        "Tipo de tablero",
-        ["Diagnóstico académico", "Socioemocional"],
-        index=0
+@st.cache_data(show_spinner=False)
+def load_prepared_socio_default() -> pd.DataFrame | None:
+    local_file = socio_load_default_file_if_exists()
+    if local_file is None:
+        return None
+    raw = socio_read_dataframe_from_path(str(local_file), int(local_file.stat().st_mtime_ns))
+    raw = socio_normalize_columns(raw)
+    missing = socio_validate_columns(raw)
+    if missing:
+        raise ValueError(f"Faltan columnas obligatorias en Auxiliares.xlsx: {', '.join(missing)}")
+    return socio_prepare_socio_data(raw)
+
+
+def align_socio_to_academic_scope(socio_df: pd.DataFrame, academic_filtered: pd.DataFrame, focus_label: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if socio_df is None or socio_df.empty:
+        empty = pd.DataFrame()
+        return empty, empty
+
+    out = socio_df.copy()
+    out = out[out['Indicador'].notna()].copy()
+
+    grade_values = sorted(academic_filtered['Grado'].dropna().astype(str).unique().tolist(), key=socio_grade_sort_key)
+    if grade_values:
+        overlap_grades = [g for g in grade_values if g in set(out['Grado'].dropna().astype(str).tolist())]
+        if overlap_grades:
+            out = out[out['Grado'].astype(str).isin(overlap_grades)].copy()
+
+    gender_values = sorted(academic_filtered['Genero'].dropna().astype(str).unique().tolist())
+    if gender_values:
+        overlap_genders = [g for g in gender_values if g in set(out['Genero'].dropna().astype(str).tolist())]
+        if overlap_genders:
+            out = out[out['Genero'].astype(str).isin(overlap_genders)].copy()
+
+    academic_courses = {str(x).strip() for x in academic_filtered['Curso'].dropna().astype(str).tolist() if str(x).strip()}
+    socio_sections = {str(x).strip() for x in out['Seccion'].dropna().astype(str).tolist() if str(x).strip()}
+    overlap_sections = sorted(academic_courses & socio_sections, key=socio_course_sort_key)
+    if overlap_sections:
+        out = out[out['Seccion'].astype(str).isin(overlap_sections)].copy()
+
+    focus_df = out[out['Sede Corta'] == focus_label].copy()
+    return out, focus_df
+
+
+def socio_status_label(score: float, gap: float, coverage: float) -> str:
+    if pd.isna(coverage) or coverage < 60:
+        return 'Dato insuficiente'
+    if pd.notna(score) and pd.notna(gap) and score >= 75 and gap >= -5:
+        return 'Fortaleza'
+    if pd.notna(score) and pd.notna(gap) and (score < 60 or gap <= -8):
+        return 'Atención prioritaria'
+    return 'Seguimiento'
+
+
+def socio_teacher_note(score: float, gap: float, coverage: float) -> str:
+    if pd.isna(coverage) or coverage < 60:
+        return 'Revisar captura o cobertura antes de intervenir.'
+    if pd.notna(score) and pd.notna(gap) and score >= 75 and gap >= 0:
+        return 'Mantener esta práctica y usarla como referencia para otros cursos.'
+    if pd.notna(score) and pd.notna(gap) and gap <= -8:
+        return 'Priorizar acompañamiento y seguimiento cercano frente a la red.'
+    if pd.notna(score) and score < 60:
+        return 'Conviene abrir conversación con docentes y mentores sobre este punto.'
+    return 'Monitorear con el director de grupo y revisar evolución en el siguiente corte.'
+
+
+def render_socio_insight_card(title: str, indicator: str, detail: str, tone: str) -> None:
+    theme = get_theme_tokens()
+    st.markdown(
+        f"""
+        <div style="
+            background:{theme['card_bg']};
+            border:1px solid {theme['card_border']};
+            border-radius:14px;
+            padding:0.95rem 1rem;
+            min-height:128px;
+        " >
+            <div style="font-size:0.9rem; color:{theme['muted']}; margin-bottom:0.35rem;">{title}</div>
+            <div style="font-size:1.15rem; font-weight:700; color:{tone}; line-height:1.25;">{indicator}</div>
+            <div style="font-size:0.9rem; color:{theme['text']}; margin-top:0.35rem; line-height:1.35;">{detail}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    if dashboard_mode == "Socioemocional":
-        run_socio_dashboard()
+
+def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_label: str) -> None:
+    theme = get_theme_tokens()
+    st.subheader('Lectura socioemocional de la sede')
+    st.caption('Una sola hoja para contrastar la sede focal frente a la red en clima, apoyo, recursos y habilidades socioemocionales.')
+
+    try:
+        socio_df = load_prepared_socio_default()
+    except Exception as exc:
+        st.warning(f'No pude cargar Auxiliares.xlsx: {exc}')
         return
 
+    if socio_df is None:
+        st.info('Para activar esta hoja, agrega `data/Auxiliares.xlsx` al repositorio.')
+        return
+
+    scoped_all, scoped_focus_all = align_socio_to_academic_scope(socio_df, academic_filtered, focus_label)
+    if scoped_all.empty:
+        st.info('No encontré registros socioemocionales que coincidan con la sede o los filtros activos del tablero.')
+        return
+
+    survey_options = ['Todos los ciclos'] + sorted(scoped_all['SurveyName'].dropna().unique().tolist())
+    selected_survey = st.radio(
+        'Ciclo a revisar',
+        survey_options,
+        horizontal=True,
+        key='embedded_socio_survey_filter',
+    )
+
+    if selected_survey == 'Todos los ciclos':
+        scoped = scoped_all.copy()
+        scoped_focus = scoped_focus_all.copy()
+    else:
+        scoped = scoped_all[scoped_all['SurveyName'] == selected_survey].copy()
+        scoped_focus = scoped_focus_all[scoped_focus_all['SurveyName'] == selected_survey].copy()
+
+    if scoped.empty:
+        st.info('No hay información socioemocional para ese ciclo con los filtros actuales.')
+        return
+
+    if scoped_focus.empty:
+        st.warning(f'La sede {focus_label} no tiene registros socioemocionales en el alcance seleccionado.')
+        return
+
+    indicator_bench = socio_sort_socio_benchmark(socio_socio_benchmark(scoped, scoped_focus, 'Indicador'), 'Indicador')
+    indicator_bench = indicator_bench[indicator_bench['Indicador'].notna()].copy()
+
+    if indicator_bench.empty:
+        st.info('No hay indicadores socioemocionales interpretables para esta vista.')
+        return
+
+    overall_red = float(scoped['Puntaje Socio'].dropna().mean()) if scoped['Puntaje Socio'].notna().any() else np.nan
+    overall_focus = float(scoped_focus['Puntaje Socio'].dropna().mean()) if scoped_focus['Puntaje Socio'].notna().any() else np.nan
+    overall_gap = overall_focus - overall_red if pd.notna(overall_focus) and pd.notna(overall_red) else np.nan
+    overall_cov = socio_safe_pct(scoped_focus['Respuesta Válida']) * 100
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        render_theme_metric_card('Puntaje de la red', f'{overall_red:.1f}' if pd.notna(overall_red) else 'Sin dato', 'Promedio ordinal 0-100', theme)
+    with c2:
+        render_theme_metric_card(f'Puntaje de {focus_label}', f'{overall_focus:.1f}' if pd.notna(overall_focus) else 'Sin dato', 'Lectura global de la sede', theme)
+    with c3:
+        gap_text = f'{overall_gap:+.1f} pp' if pd.notna(overall_gap) else 'Sin dato'
+        render_theme_metric_card('Brecha frente a la red', gap_text, 'Comparación directa con el mismo filtro', theme)
+    with c4:
+        render_theme_metric_card('Cobertura interpretable', f'{overall_cov:.1f}%', 'Evita leer como rezago lo que es un problema de captura', theme)
+
+    with st.expander('Cómo leer esta hoja', expanded=False):
+        st.markdown(
+            f"""
+            - Esta vista **no usa aciertos**, usa un **puntaje ordinal 0-100** según la escala de cada pregunta.
+            - El contraste siempre es **{focus_label} vs red filtrada**.
+            - Mira primero la **brecha**, luego el **puntaje de la sede**, y después la **cobertura**.
+            - Si la cobertura es baja, la señal puede venir de un problema de respuesta y no necesariamente de clima o bienestar.
+            """
+        )
+
+    chart_df = indicator_bench.melt(
+        id_vars='Indicador',
+        value_vars=['puntaje_red', 'puntaje_sede'],
+        var_name='Serie',
+        value_name='Puntaje',
+    )
+    chart_df['Serie'] = chart_df['Serie'].map({'puntaje_red': 'Red', 'puntaje_sede': focus_label})
+    chart_df['Indicador corto'] = chart_df['Indicador'].map(lambda x: socio_wrap_plot_label(x, width=26, max_lines=3))
+
+    col1, col2 = st.columns([1.15, 0.85])
+    with col1:
+        fig = px.bar(
+            chart_df,
+            y='Indicador corto',
+            x='Puntaje',
+            color='Serie',
+            barmode='group',
+            orientation='h',
+            title=f'Indicadores socioemocionales: {focus_label} vs red',
+            color_discrete_map={'Red': theme['muted'], focus_label: theme['primary']},
+        )
+        fig.update_layout(yaxis_title='', xaxis_title='Puntaje 0-100', legend_title_text='')
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        gap_df = indicator_bench.copy()
+        gap_df['Indicador corto'] = gap_df['Indicador'].map(lambda x: socio_wrap_plot_label(x, width=22, max_lines=3))
+        gap_df['Estado'] = np.where(gap_df['brecha_puntaje'] >= 0, 'Por encima', 'Por debajo')
+        fig = px.bar(
+            gap_df,
+            y='Indicador corto',
+            x='brecha_puntaje',
+            color='Estado',
+            orientation='h',
+            text='brecha_puntaje',
+            title='Brecha de la sede por indicador',
+            color_discrete_map={'Por encima': theme['success'], 'Por debajo': theme['danger']},
+        )
+        fig.add_vline(x=0, line_dash='dash', line_color=theme['muted'])
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+        fig.update_layout(yaxis_title='', xaxis_title='Puntos frente a la red', showlegend=False)
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+    priority_df = indicator_bench.copy()
+    priority_df['Semáforo'] = priority_df.apply(lambda r: socio_status_label(r['puntaje_sede'], r['brecha_puntaje'], r['cobertura_sede']), axis=1)
+    priority_df['Lectura sugerida'] = priority_df.apply(lambda r: socio_teacher_note(r['puntaje_sede'], r['brecha_puntaje'], r['cobertura_sede']), axis=1)
+
+    strongest = priority_df.sort_values(['puntaje_sede', 'brecha_puntaje'], ascending=[False, False]).head(1)
+    weakest = priority_df.sort_values(['brecha_puntaje', 'puntaje_sede'], ascending=[True, True]).head(1)
+    lowest_cov = priority_df.sort_values(['cobertura_sede', 'puntaje_sede'], ascending=[True, False]).head(1)
+
+    st.markdown('**Dónde mirar primero**')
+    k1, k2, k3 = st.columns(3)
+    if not strongest.empty:
+        row = strongest.iloc[0]
+        with k1:
+            render_socio_insight_card(
+                'Fortaleza más visible',
+                str(row['Indicador']),
+                f"Puntaje sede {row['puntaje_sede']:.1f} | Brecha {row['brecha_puntaje']:+.1f} pp",
+                theme['success'],
+            )
+    if not weakest.empty:
+        row = weakest.iloc[0]
+        with k2:
+            render_socio_insight_card(
+                'Alerta principal',
+                str(row['Indicador']),
+                f"Puntaje sede {row['puntaje_sede']:.1f} | Brecha {row['brecha_puntaje']:+.1f} pp",
+                theme['danger'],
+            )
+    if not lowest_cov.empty:
+        row = lowest_cov.iloc[0]
+        with k3:
+            render_socio_insight_card(
+                'Indicador a validar',
+                str(row['Indicador']),
+                f"Cobertura sede {row['cobertura_sede']:.1f}% | {row['Semáforo']}",
+                theme['warning'],
+            )
+
+    teacher_table = priority_df[[
+        'Indicador', 'puntaje_sede', 'puntaje_red', 'brecha_puntaje', 'favorable_sede', 'cobertura_sede', 'Semáforo', 'Lectura sugerida'
+    ]].rename(columns={
+        'puntaje_sede': f'Puntaje {focus_label}',
+        'puntaje_red': 'Puntaje red',
+        'brecha_puntaje': 'Brecha vs red',
+        'favorable_sede': f'% favorable {focus_label}',
+        'cobertura_sede': f'% cobertura {focus_label}',
+    })
+
+    st.markdown('**Lectura por indicador para docentes y directivos**')
+    st.dataframe(teacher_table, use_container_width=True, hide_index=True)
+
+    st.markdown('**Bajar al detalle: una pregunta concreta**')
+    indicator_options = priority_df['Indicador'].dropna().tolist()
+    selected_indicator = st.selectbox(
+        'Indicador para profundizar',
+        indicator_options,
+        key='embedded_socio_indicator_selector',
+    )
+
+    qsum = socio_question_summary(
+        scoped[scoped['Indicador'] == selected_indicator],
+        scoped_focus[scoped_focus['Indicador'] == selected_indicator],
+    )
+    qsum = qsum[qsum['TexQuestion'].notna()].copy()
+    if qsum.empty:
+        st.info('No hay preguntas disponibles para ese indicador.')
+        return
+
+    qsum = qsum.sort_values(['brecha_puntaje', 'cobertura_sede', 'puntaje_sede'], ascending=[True, True, True]).reset_index(drop=True)
+    question_options = qsum['TexQuestion'].tolist()
+    default_question = question_options[0]
+    selected_question = st.selectbox(
+        'Pregunta guía',
+        question_options,
+        index=question_options.index(default_question),
+        format_func=lambda x: socio_wrap_plot_label(x, width=90, max_lines=2).replace('<br>', ' '),
+        key='embedded_socio_question_selector',
+    )
+
+    qrow = qsum[qsum['TexQuestion'] == selected_question].iloc[0]
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric('Puntaje red', f"{qrow['puntaje_red']:.1f}")
+    m2.metric(f'Puntaje {focus_label}', f"{qrow['puntaje_sede']:.1f}" if pd.notna(qrow['puntaje_sede']) else 'Sin dato')
+    m3.metric('Brecha', f"{qrow['brecha_puntaje']:+.1f} pp" if pd.notna(qrow['brecha_puntaje']) else 'Sin dato')
+    m4.metric('Cobertura sede', f"{qrow['cobertura_sede']:.1f}%" if pd.notna(qrow['cobertura_sede']) else 'Sin dato')
+
+    st.markdown(f'**Pregunta:** {selected_question}')
+
+    red_profile = socio_response_profile(scoped, selected_question).rename(columns={'pct': 'Red'})
+    focus_profile = socio_response_profile(scoped_focus, selected_question).rename(columns={'pct': focus_label})
+    merged = red_profile.merge(focus_profile, on='UsAnswerSurv', how='outer').fillna(0)
+    merged['Etiqueta'] = merged['UsAnswerSurv'].map(lambda x: socio_wrap_plot_label(x, width=24, max_lines=3))
+    merged['Pico'] = merged[['Red', focus_label]].max(axis=1)
+    merged = merged.sort_values('Pico', ascending=True)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(y=merged['Etiqueta'], x=merged['Red'], name='Red', orientation='h', marker_color=theme['muted']))
+    fig.add_trace(go.Bar(y=merged['Etiqueta'], x=merged[focus_label], name=focus_label, orientation='h', marker_color=theme['primary']))
+    fig.update_layout(
+        barmode='group',
+        title='Cómo respondió la sede frente a la red',
+        xaxis_title='% de estudiantes',
+        yaxis_title='',
+        height=max(360, 110 + 70 * len(merged)),
+    )
+    apply_accessible_figure_style(fig, theme)
+    st.plotly_chart(fig, use_container_width=True)
+
+    teacher_question_table = qsum[[
+        'TexQuestion', 'puntaje_sede', 'puntaje_red', 'brecha_puntaje', 'cobertura_sede'
+    ]].rename(columns={
+        'TexQuestion': 'Pregunta',
+        'puntaje_sede': f'Puntaje {focus_label}',
+        'puntaje_red': 'Puntaje red',
+        'brecha_puntaje': 'Brecha vs red',
+        'cobertura_sede': f'% cobertura {focus_label}',
+    })
+    st.dataframe(teacher_question_table, use_container_width=True, hide_index=True, height=260)
+
+    with st.expander('Chequeo rápido de calidad del dato', expanded=False):
+        low_cov = qsum[qsum['cobertura_sede'] < 80][['TexQuestion', 'cobertura_sede', 'puntaje_sede', 'brecha_puntaje']].rename(columns={
+            'TexQuestion': 'Pregunta',
+            'cobertura_sede': f'% cobertura {focus_label}',
+            'puntaje_sede': f'Puntaje {focus_label}',
+            'brecha_puntaje': 'Brecha vs red',
+        })
+        if low_cov.empty:
+            st.success('En este indicador no hay alertas fuertes de cobertura para la sede focal.')
+        else:
+            st.dataframe(low_cov, use_container_width=True, hide_index=True)
+
+
+
+def main():
     st.title("Evaluación Diagnóstica 2026 Calendario A")
-    st.caption("Tablero pedagógico para comparar el desempeño de una sede frente a Colombia y leer mejor lo que cuentan las preguntas.")
+    st.caption("Tablero pedagógico para contrastar la sede frente a la red y sumar una lectura socioemocional útil para docentes.")
 
     local_file = load_default_file_if_exists()
     if local_file is None:
@@ -2372,7 +2664,8 @@ def main():
         "Tablero directivo",
         "Detalle por prueba",
         "Análisis de las respuestas",
-        "Análisis de antigüedad del estudiante"
+        "Análisis de antigüedad del estudiante",
+        "Lectura socioemocional",
     ])
 
     with tabs[0]:
@@ -2385,6 +2678,8 @@ def main():
         show_psychometrics_tab(filtered, focus_df, focus_label)
     with tabs[4]:
         show_antiguedad_tab(filtered, focus_df, focus_label)
+    with tabs[5]:
+        show_embedded_socioemocional_tab(filtered, focus_label)
 
 
 if __name__ == "__main__":

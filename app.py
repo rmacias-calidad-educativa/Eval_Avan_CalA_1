@@ -1587,56 +1587,111 @@ def english_modal_level(student_levels: pd.DataFrame) -> str:
     return str(freq.index[0])
 
 
+def english_response_level_accuracy(df_english: pd.DataFrame) -> pd.DataFrame:
+    if df_english.empty:
+        return pd.DataFrame(columns=["Grado", "Grado Etiqueta", "Nivel CEFR", "respuestas", "respuestas_correctas", "% de respuestas correctas"])
+
+    work = df_english[df_english["Nivel Inglés"].notna()].copy()
+    if work.empty:
+        return pd.DataFrame(columns=["Grado", "Grado Etiqueta", "Nivel CEFR", "respuestas", "respuestas_correctas", "% de respuestas correctas"])
+
+    out = (
+        work.groupby(["Grado", "Nivel Inglés"], dropna=False)
+        .agg(
+            respuestas=("Acierto", "size"),
+            respuestas_correctas=("Acierto", "sum"),
+            pct_acierto=("Acierto", "mean"),
+        )
+        .reset_index()
+        .rename(columns={"Nivel Inglés": "Nivel CEFR"})
+    )
+    out["Grado Etiqueta"] = out["Grado"].map(grade_display_label)
+    out["% de respuestas correctas"] = (out["pct_acierto"] * 100).round(2)
+    out["Grado Orden"] = out["Grado"].map(lambda x: grade_sort_key(x)[0])
+    out = out.sort_values(["Grado Orden", "Grado", "Nivel CEFR"]).drop(columns=["Grado Orden", "pct_acierto"])
+    return out
+
+
+def english_response_level_pivot(df_english: pd.DataFrame) -> pd.DataFrame:
+    level_accuracy = english_response_level_accuracy(df_english)
+    if level_accuracy.empty:
+        return pd.DataFrame()
+    pivot = (
+        level_accuracy.pivot(index="Grado Etiqueta", columns="Nivel CEFR", values="% de respuestas correctas")
+        .reindex(columns=ENGLISH_LEVEL_ORDER)
+        .fillna(0)
+        .round(2)
+        .reset_index()
+    )
+    return pivot
+
+
+def english_top_accuracy_level(df_english: pd.DataFrame) -> str:
+    level_accuracy = english_response_level_accuracy(df_english)
+    if level_accuracy.empty:
+        return "Sin dato"
+    mean_by_level = level_accuracy.groupby("Nivel CEFR", dropna=False)["% de respuestas correctas"].mean()
+    if mean_by_level.empty:
+        return "Sin dato"
+    best = float(mean_by_level.max())
+    for lvl in ENGLISH_LEVEL_ORDER:
+        if lvl in mean_by_level.index and float(mean_by_level[lvl]) == best:
+            return lvl
+    return str(mean_by_level.sort_values(ascending=False).index[0])
+
+
 def render_english_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.DataFrame, focus_label: str) -> None:
     theme = get_theme_tokens()
-    student_levels_red = classify_english_levels(df_prueba)
-    student_levels_sede = classify_english_levels(focus_prueba)
+    red_accuracy = english_response_level_accuracy(df_prueba)
+    sede_accuracy = english_response_level_accuracy(focus_prueba)
 
-    if student_levels_red.empty:
+    if red_accuracy.empty:
         st.warning("No encontré etiquetas de nivel (Pre A1, A1, A2, B1) dentro de la prueba de Inglés. Revisa si esos niveles están en Competencia, Pregunta o Prueba.")
         return
 
+    red_scope = df_prueba[df_prueba["Nivel Inglés"].notna()].copy()
+    sede_scope = focus_prueba[focus_prueba["Nivel Inglés"].notna()].copy()
+    red_pct = safe_pct(red_scope["Acierto"])
+    sede_pct = safe_pct(sede_scope["Acierto"]) if not sede_scope.empty else 0.0
+
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Estudiantes clasificados en la red", f"{safe_nunique(student_levels_red['ID Estudiante']):,}")
-    c2.metric(f"Estudiantes clasificados en {focus_label}", f"{safe_nunique(student_levels_sede['ID Estudiante']):,}")
-    c3.metric("Nivel más frecuente en la red", english_modal_level(student_levels_red))
-    c4.metric(f"Nivel más frecuente en {focus_label}", english_modal_level(student_levels_sede))
+    c1.metric("% de respuestas correctas en la red", f"{red_pct:.1f}%")
+    c2.metric(f"% de respuestas correctas en {focus_label}", f"{sede_pct:.1f}%" if not sede_scope.empty else "Sin dato")
+    c3.metric("Nivel con mayor acierto en la red", english_top_accuracy_level(df_prueba))
+    c4.metric(f"Nivel con mayor acierto en {focus_label}", english_top_accuracy_level(focus_prueba))
 
-    st.markdown("**Inglés se clasifica por nivel CEFR según el mayor porcentaje de acierto del estudiante**")
-    st.caption("Para cada estudiante se compara su desempeño en Pre A1, A1, A2 y B1. El nivel con mejor porcentaje de acierto se toma como el nivel probable.")
-
-    red_counts = english_grade_level_counts(student_levels_red)
-    sede_counts = english_grade_level_counts(student_levels_sede)
+    st.markdown("**Inglés se lee por proporción de respuestas correctas en cada nivel CEFR**")
+    st.caption("Las barras apiladas muestran, por grado, qué porcentaje de respuestas fue correcto en Pre A1, A1, A2 y B1. Esto ayuda a aproximar el nivel donde el grupo responde con mayor solidez.")
 
     col1, col2 = st.columns(2)
     with col1:
-        if sede_counts.empty:
-            st.info(f"La sede {focus_label} no tiene estudiantes clasificables en Inglés con los filtros actuales.")
+        if sede_accuracy.empty:
+            st.info(f"La sede {focus_label} no tiene respuestas clasificables en Inglés con los filtros actuales.")
         else:
             fig = px.bar(
-                sede_counts,
+                sede_accuracy,
                 x="Grado Etiqueta",
-                y="Estudiantes",
+                y="% de respuestas correctas",
                 color="Nivel CEFR",
                 barmode="stack",
-                title=f"{focus_label}: cantidad de estudiantes por grado y nivel",
+                title=f"{focus_label}: proporción de respuestas correctas por grado y nivel",
                 category_orders={"Nivel CEFR": ENGLISH_LEVEL_ORDER},
             )
-            fig.update_layout(xaxis_title="Grado", yaxis_title="Cantidad de estudiantes")
+            fig.update_layout(xaxis_title="Grado", yaxis_title="% de respuestas correctas")
             apply_accessible_figure_style(fig, theme)
             st.plotly_chart(fig, use_container_width=True)
 
     with col2:
         fig = px.bar(
-            red_counts,
+            red_accuracy,
             x="Grado Etiqueta",
-            y="Estudiantes",
+            y="% de respuestas correctas",
             color="Nivel CEFR",
             barmode="stack",
-            title="Red filtrada: cantidad de estudiantes por grado y nivel",
+            title="Red filtrada: proporción de respuestas correctas por grado y nivel",
             category_orders={"Nivel CEFR": ENGLISH_LEVEL_ORDER},
         )
-        fig.update_layout(xaxis_title="Grado", yaxis_title="Cantidad de estudiantes")
+        fig.update_layout(xaxis_title="Grado", yaxis_title="% de respuestas correctas")
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -1644,32 +1699,32 @@ def render_english_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prue
     t1, t2 = st.columns(2)
     with t1:
         st.markdown(f"**{focus_label}**")
-        st.dataframe(english_level_pivot(student_levels_sede), use_container_width=True, hide_index=True)
+        st.dataframe(english_response_level_pivot(focus_prueba), use_container_width=True, hide_index=True)
     with t2:
         st.markdown("**Red filtrada**")
-        st.dataframe(english_level_pivot(student_levels_red), use_container_width=True, hide_index=True)
+        st.dataframe(english_response_level_pivot(df_prueba), use_container_width=True, hide_index=True)
 
-    if not student_levels_sede.empty:
+    if not sede_accuracy.empty:
         level_mix = (
-            student_levels_sede["Nivel CEFR"].value_counts(normalize=True)
+            sede_accuracy.groupby("Nivel CEFR", dropna=False)["% de respuestas correctas"]
+            .mean()
             .reindex(ENGLISH_LEVEL_ORDER)
             .fillna(0)
-            .mul(100)
             .round(2)
             .reset_index()
         )
-        level_mix.columns = ["Nivel CEFR", "% de estudiantes"]
+        level_mix.columns = ["Nivel CEFR", "% de respuestas correctas"]
         fig = px.bar(
             level_mix,
             x="Nivel CEFR",
-            y="% de estudiantes",
-            text="% de estudiantes",
-            title=f"Distribución porcentual de niveles en {focus_label}",
+            y="% de respuestas correctas",
+            text="% de respuestas correctas",
+            title=f"Promedio de acierto por nivel en {focus_label}",
             category_orders={"Nivel CEFR": ENGLISH_LEVEL_ORDER},
             color_discrete_sequence=[theme["primary"]],
         )
         fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
-        fig.update_layout(xaxis_title="Nivel", yaxis_title="% de estudiantes")
+        fig.update_layout(xaxis_title="Nivel", yaxis_title="% de respuestas correctas")
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -1758,7 +1813,7 @@ def show_pruebas_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str)
             """
             - Cada pestaña resume una prueba completa.
             - La comparación principal siempre es **sede focal vs Colombia**.
-            - En **Inglés** la lectura cambia: no se resume por dimensión, sino por **nivel CEFR** (Pre A1, A1, A2, B1).
+            - En **Inglés** la lectura cambia: se mira el **% de respuestas correctas** en cada nivel CEFR (Pre A1, A1, A2, B1).
             - Si una competencia queda por debajo de Colombia, suele ser un buen punto de partida para planear refuerzos.
             """
         )
@@ -2144,6 +2199,7 @@ def align_socio_to_academic_scope(socio_df: pd.DataFrame, academic_filtered: pd.
 
     out = socio_df.copy()
     out = out[out["Indicador"].notna()].copy()
+    out = out[out["Indicador"] != "Autoeficacia"].copy()
 
     grade_values = sorted(academic_filtered["Grado"].dropna().astype(str).unique().tolist(), key=socio_grade_sort_key)
     if grade_values:

@@ -220,12 +220,11 @@ def socio_build_socio_question_specs() -> list[dict]:
 
     def add(indicator: str, dimension: str, scale: str, questions: list[str], reverse: list[str] | None = None, survey_scope: list[str] | None = None) -> None:
         reverse_keys = {socio_normalize_text_key(x) for x in reverse or []}
-        scope = {socio_strip_accents(str(x)).strip().lower() for x in survey_scope or []}
+        scope = {str(x) for x in survey_scope or []}
         for q in questions:
             q_key = socio_normalize_text_key(q)
             specs.append({
                 "question_key": q_key,
-                "question_text": q,
                 "indicator": indicator,
                 "dimension": dimension,
                 "scale": scale,
@@ -342,54 +341,9 @@ def socio_build_socio_question_specs() -> list[dict]:
 socio_SOCIO_QUESTION_SPECS = socio_build_socio_question_specs()
 
 
-def socio_specs_dataframe() -> pd.DataFrame:
-    """Tabla estática con el banco de ítems socioemocionales (lo definido en socio_build_socio_question_specs)."""
-    specs = socio_SOCIO_QUESTION_SPECS
-    if not specs:
-        return pd.DataFrame(columns=["Dimension", "Indicador", "Escala", "Pregunta", "Inversa", "SurveyScope"])
-
-    rows = []
-    for s in specs:
-        scope = s.get("survey_scope") or set()
-        scope_label = ", ".join(sorted(scope)) if scope else "Todos los ciclos"
-        rows.append({
-            "Dimension": s.get("dimension"),
-            "Indicador": s.get("indicator"),
-            "Escala": s.get("scale"),
-            "Pregunta": s.get("question_text") or s.get("question_key"),
-            "Inversa": bool(s.get("reverse")),
-            "SurveyScope": scope_label,
-        })
-
-    out = pd.DataFrame(rows)
-    out["__orden_dim__"] = out["Dimension"].map(lambda x: socio_dimension_sort_key(x)[0])
-    out["__orden_ind__"] = out["Indicador"].map(lambda x: socio_indicator_sort_key(x)[0])
-    out = out.sort_values(["__orden_dim__", "__orden_ind__", "Pregunta"]).drop(columns=["__orden_dim__", "__orden_ind__"]).reset_index(drop=True)
-    return out
-
-
-def socio_ensure_report_columns(frame: pd.DataFrame) -> pd.DataFrame:
-    """Asegura que existan columnas derivadas clave para las vistas (robusto ante cachés/versiones)."""
-    if frame is None or frame.empty:
-        return frame
-    out = frame.copy()
-    if "Respuesta Reporte" not in out.columns:
-        if "Escala" in out.columns and "Answer Key" in out.columns:
-            out["Respuesta Reporte"] = out.apply(
-                lambda r: socio_report_answer_label(str(r.get("Escala")), str(r.get("Answer Key", "")), r.get("UsAnswerSurv")),
-                axis=1,
-            )
-        else:
-            out["Respuesta Reporte"] = np.nan
-    if "Respuesta Válida" not in out.columns:
-        out["Respuesta Válida"] = out.get("Answer Key", pd.Series(index=out.index, dtype=object)).astype(str).str.len().gt(0)
-    return out
-
-
-
 def socio_get_socio_question_spec(question: str, survey_name: str) -> dict | None:
     q_key = socio_normalize_text_key(question)
-    survey_name = socio_strip_accents(str(survey_name)).strip().lower()
+    survey_name = str(survey_name)
     for spec in socio_SOCIO_QUESTION_SPECS:
         if spec["question_key"] != q_key:
             continue
@@ -646,8 +600,6 @@ def socio_response_profile(frame: pd.DataFrame, question: str) -> pd.DataFrame:
 
 
 def socio_yes_no_summary(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str, indicator: str) -> pd.DataFrame:
-    df = socio_ensure_report_columns(df)
-    focus_df = socio_ensure_report_columns(focus_df)
     base = df[(df["Indicador"] == indicator) & (df["Escala"] == "yes_no") & (df["Respuesta Reporte"].isin(["Sí", "No"]))].copy()
     focus = focus_df[(focus_df["Indicador"] == indicator) & (focus_df["Escala"] == "yes_no") & (focus_df["Respuesta Reporte"].isin(["Sí", "No"]))].copy()
     other = base[base["Sede Corta"] != focus_label].copy()
@@ -2194,6 +2146,7 @@ def align_socio_to_academic_scope(socio_df: pd.DataFrame, academic_filtered: pd.
         return empty, empty
 
     out = socio_df.copy()
+    out = out[out["Indicador"].notna()].copy()
 
     grade_values = sorted(academic_filtered["Grado"].dropna().astype(str).unique().tolist(), key=socio_grade_sort_key)
     if grade_values:
@@ -2258,11 +2211,110 @@ def render_socio_insight_card(title: str, indicator: str, detail: str, tone: str
         unsafe_allow_html=True,
     )
 
+# =========================
+# SOCIOEMOCIONAL · Helpers de contraste por opciones
+# =========================
+
+def socio_ensure_report_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Garantiza que existan columnas derivadas usadas en la vista socioemocional.
+    Evita errores cuando Streamlit cachea versiones viejas o cuando el DF llega sin preparación completa.
+    """
+    needed = {
+        "Indicador", "Dimension", "Escala", "Inversa",
+        "Question Key", "Answer Key",
+        "Respuesta Válida", "Respuesta Reporte",
+    }
+    if needed.issubset(set(df.columns)):
+        return df
+
+    out = df.copy()
+
+    if "Question Key" not in out.columns and "TexQuestion" in out.columns:
+        out["Question Key"] = out["TexQuestion"].map(socio_normalize_text_key)
+    if "Answer Key" not in out.columns and "UsAnswerSurv" in out.columns:
+        out["Answer Key"] = out["UsAnswerSurv"].map(socio_normalize_text_key)
+
+    # Recalcular specs si hace falta
+    if any(c not in out.columns for c in ["Indicador", "Dimension", "Escala", "Inversa"]):
+        specs = out.apply(lambda r: socio_get_socio_question_spec(r.get("TexQuestion"), r.get("SurveyName")), axis=1)
+        out["Indicador"] = specs.map(lambda x: x["indicator"] if x else np.nan)
+        out["Dimension"] = specs.map(lambda x: x["dimension"] if x else np.nan)
+        out["Escala"] = specs.map(lambda x: x["scale"] if x else np.nan)
+        out["Inversa"] = specs.map(lambda x: bool(x["reverse"]) if x else False)
+
+    if "Respuesta Válida" not in out.columns:
+        out["Respuesta Válida"] = out.apply(
+            lambda r: bool(socio_get_socio_question_spec(r.get("TexQuestion"), r.get("SurveyName"))) and bool(r.get("Answer Key")),
+            axis=1,
+        )
+
+    if "Respuesta Reporte" not in out.columns:
+        def _display_row(row: pd.Series):
+            spec = socio_get_socio_question_spec(row.get("TexQuestion"), row.get("SurveyName"))
+            if not spec:
+                return np.nan
+            return socio_report_answer_label(spec["scale"], row.get("Answer Key", ""), row.get("UsAnswerSurv"))
+
+        out["Respuesta Reporte"] = out.apply(_display_row, axis=1)
+
+    return out
+
+
+def socio_distribution_pct(frame: pd.DataFrame, question: str) -> pd.Series:
+    sub = frame[(frame["TexQuestion"] == question) & (frame["Respuesta Reporte"].notna())].copy()
+    if sub.empty:
+        return pd.Series(dtype=float)
+    counts = sub.groupby("Respuesta Reporte", dropna=False).size()
+    total = float(counts.sum())
+    if total <= 0:
+        return pd.Series(dtype=float)
+    return (counts / total * 100).astype(float)
+
+
+def socio_compare_option_distribution(scoped: pd.DataFrame, scoped_focus: pd.DataFrame, question: str, focus_label: str) -> pd.DataFrame:
+    red = socio_distribution_pct(scoped, question).rename("Red")
+    sede = socio_distribution_pct(scoped_focus, question).rename(focus_label)
+    merged = pd.concat([red, sede], axis=1).fillna(0.0).reset_index().rename(columns={"index": "Opción"})
+    merged["Δ (pp)"] = merged[focus_label] - merged["Red"]
+    # Limpieza de ruido
+    for col in ["Red", focus_label, "Δ (pp)"]:
+        merged[col] = merged[col].astype(float).round(2)
+    return merged
+
+
+def socio_option_order_for_scale(scale: str, observed_options: list[str]) -> list[str]:
+    mapping = SOCIO_DISPLAY_MAPS.get(scale, {})
+    if mapping:
+        base_order = list(mapping.values())
+        extras = [x for x in observed_options if x not in base_order]
+        return base_order + sorted(extras)
+    return sorted(observed_options)
+
+
+def socio_question_choice_extremes(scoped: pd.DataFrame, scoped_focus: pd.DataFrame, question: str, focus_label: str) -> dict | None:
+    comp = socio_compare_option_distribution(scoped, scoped_focus, question, focus_label)
+    if comp.empty:
+        return None
+    top = comp.loc[comp["Δ (pp)"].idxmax()]
+    bottom = comp.loc[comp["Δ (pp)"].idxmin()]
+    return {
+        "mas_opcion": str(top["Opción"]),
+        "mas_delta": float(top["Δ (pp)"]),
+        "mas_sede": float(top[focus_label]),
+        "mas_red": float(top["Red"]),
+        "menos_opcion": str(bottom["Opción"]),
+        "menos_delta": float(bottom["Δ (pp)"]),
+        "menos_sede": float(bottom[focus_label]),
+        "menos_red": float(bottom["Red"]),
+        "abs_delta": float(max(abs(top["Δ (pp)"]), abs(bottom["Δ (pp)"]))),
+    }
+
+
 
 def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_label: str) -> None:
     theme = get_theme_tokens()
     st.subheader("Lectura socioemocional de la sede")
-    st.caption("Una sola hoja para contrastar la sede focal frente a la red en clima, apoyo, recursos y habilidades socioemocionales.")
+    st.caption("Una sola hoja para contrastar la sede focal frente a la red y luego bajar al detalle de reactivos (preguntas) y sus opciones de respuesta.")
 
     try:
         socio_df = load_prepared_socio_default()
@@ -2275,8 +2327,6 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
         return
 
     scoped_all, scoped_focus_all = align_socio_to_academic_scope(socio_df, academic_filtered, focus_label)
-    scoped_all = socio_ensure_report_columns(scoped_all)
-    scoped_focus_all = socio_ensure_report_columns(scoped_focus_all)
     if scoped_all.empty:
         st.info("No encontré registros socioemocionales que coincidan con la sede o los filtros activos del tablero.")
         return
@@ -2297,45 +2347,14 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
         st.warning(f"La sede {focus_label} no tiene registros socioemocionales en el alcance seleccionado.")
         return
 
-    # --- Auditoría: banco de ítems y preguntas observadas ---
-    specs_df = socio_specs_dataframe()
+    # Asegurar columnas derivadas (evita KeyError cuando hay cache viejo)
+    scoped = socio_ensure_report_columns(scoped)
+    scoped_focus = socio_ensure_report_columns(scoped_focus)
 
-    unmapped = scoped[scoped["Indicador"].isna() & scoped["TexQuestion"].notna()].copy()
-    scoped = scoped[scoped["Indicador"].notna()].copy()
-    scoped_focus = scoped_focus[scoped_focus["Indicador"].notna()].copy()
-
-    with st.expander("Banco de ítems y chequeo de mapeo", expanded=False):
-        st.markdown("**Ítems definidos en el tablero (dimensión, indicador, escala, pregunta)**")
-        st.dataframe(specs_df, use_container_width=True, hide_index=True)
-
-        st.markdown("**Preguntas del archivo Auxiliares.xlsx que quedaron sin mapeo**")
-        if unmapped.empty:
-            st.success("No aparecieron preguntas sin mapeo en el alcance seleccionado.")
-        else:
-            um = (
-                unmapped.groupby(["SurveyName", "TexQuestion"], dropna=False)
-                .size()
-                .reset_index(name="respuestas")
-                .sort_values("respuestas", ascending=False)
-            )
-            um["Pregunta"] = um["TexQuestion"].map(lambda x: shorten_text(x, 140))
-            st.dataframe(um[["SurveyName", "Pregunta", "respuestas"]], use_container_width=True, hide_index=True)
-            st.caption("Si aquí aparece algo, suele ser por diferencias de redacción/puntuación en `TexQuestion` frente al banco de ítems.")
-
-    if scoped.empty:
-        st.info("Con los filtros actuales no quedaron preguntas socioemocionales mapeadas a indicador/dimensión.")
-        return
-    if scoped_focus.empty:
-        st.warning(f"La sede {focus_label} no tiene preguntas socioemocionales mapeadas en el alcance seleccionado.")
-        return
-
+    # -------------------------
+    # Vista inicial (se mantiene)
+    # -------------------------
     indicator_bench = socio_sort_socio_benchmark(socio_socio_benchmark(scoped, scoped_focus, "Indicador"), "Indicador")
-    # Enriquecer con dimensión para poder navegar por dimensión -> indicador
-    ind_dim = scoped[["Indicador", "Dimension"]].dropna().drop_duplicates()
-    indicator_bench = indicator_bench.merge(ind_dim, on="Indicador", how="left")
-
-    dimension_bench = socio_sort_socio_benchmark(socio_socio_benchmark(scoped, scoped_focus, "Dimension"), "Dimension")
-    dimension_bench = dimension_bench[dimension_bench["Dimension"].notna()].copy()
     indicator_bench = indicator_bench[indicator_bench["Indicador"].notna()].copy()
     if indicator_bench.empty:
         st.info("No hay indicadores socioemocionales interpretables para esta vista.")
@@ -2360,31 +2379,11 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
     with st.expander("Cómo leer esta hoja", expanded=False):
         st.markdown(
             f"""
-            - Esta vista **no usa aciertos**, usa un **puntaje ordinal 0-100** según la escala de cada pregunta.
+            - Esta vista usa un **puntaje ordinal 0-100** según la escala de cada pregunta.
             - El contraste siempre es **{focus_label} vs red filtrada**.
             - Mira primero la **brecha**, luego el **puntaje de la sede**, y después la **cobertura**.
-            - Las respuestas `0` se omiten del detalle cuando funcionan como dato perdido.
+            - En el detalle por preguntas verás **qué opciones se eligen más/menos** en {focus_label} frente a la red.
             """
-        )
-
-    # --- Resumen por dimensión ---
-    if not dimension_bench.empty:
-        st.markdown("**Dimensiones socioemocionales: comparación sede vs red**")
-        dim_table = dimension_bench.rename(columns={
-            "puntaje_red": "Puntaje red",
-            "puntaje_sede": f"Puntaje {focus_label}",
-            "brecha_puntaje": "Brecha vs red",
-            "favorable_red": "% favorable red",
-            "favorable_sede": f"% favorable {focus_label}",
-            "cobertura_sede": f"% cobertura {focus_label}",
-        })
-        st.dataframe(
-            dim_table[[
-                "Dimension", f"Puntaje {focus_label}", "Puntaje red", "Brecha vs red",
-                f"% favorable {focus_label}", f"% cobertura {focus_label}",
-            ]],
-            use_container_width=True,
-            hide_index=True,
         )
 
     chart_df = indicator_bench.melt(id_vars="Indicador", value_vars=["puntaje_red", "puntaje_sede"], var_name="Serie", value_name="Puntaje")
@@ -2393,45 +2392,74 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
 
     col1, col2 = st.columns([1.15, 0.85])
     with col1:
-        fig = px.bar(chart_df, y="Indicador corto", x="Puntaje", color="Serie", barmode="group", orientation="h", title=f"Indicadores socioemocionales: {focus_label} vs red", color_discrete_map={"Red": theme["muted"], focus_label: theme["primary"]})
+        fig = px.bar(
+            chart_df,
+            y="Indicador corto",
+            x="Puntaje",
+            color="Serie",
+            barmode="group",
+            orientation="h",
+            title=f"Indicadores socioemocionales: {focus_label} vs red",
+            color_discrete_map={"Red": theme["muted"], focus_label: theme["primary"]},
+        )
         fig.update_layout(yaxis_title="", xaxis_title="Puntaje 0-100", legend_title_text="")
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
+
     with col2:
         gap_df = indicator_bench.copy()
         gap_df["Indicador corto"] = gap_df["Indicador"].map(lambda x: socio_wrap_plot_label(x, width=22, max_lines=3))
         gap_df["Estado"] = np.where(gap_df["brecha_puntaje"] >= 0, "Por encima", "Por debajo")
-        fig = px.bar(gap_df, y="Indicador corto", x="brecha_puntaje", color="Estado", orientation="h", text="brecha_puntaje", title="Brecha de la sede por indicador", color_discrete_map={"Por encima": theme["success"], "Por debajo": theme["danger"]})
+        fig = px.bar(
+            gap_df,
+            y="Indicador corto",
+            x="brecha_puntaje",
+            color="Estado",
+            orientation="h",
+            text="brecha_puntaje",
+            title="Brecha de la sede por indicador",
+            color_discrete_map={"Por encima": theme["success"], "Por debajo": theme["danger"]},
+        )
         fig.add_vline(x=0, line_dash="dash", line_color=theme["muted"])
         fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
         fig.update_layout(yaxis_title="", xaxis_title="Puntos frente a la red", showlegend=False)
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
+    # -------------------------
+    # (Nuevo) Desagregación por dimensión
+    # -------------------------
+    dimension_bench = socio_sort_socio_benchmark(socio_socio_benchmark(scoped, scoped_focus, "Dimension"), "Dimension")
+    dimension_bench = dimension_bench[dimension_bench["Dimension"].notna()].copy()
+    if not dimension_bench.empty:
+        with st.expander("Desagregación por dimensión (sede vs red)", expanded=False):
+            dim_table = dimension_bench.rename(columns={
+                "puntaje_sede": f"Puntaje {focus_label}",
+                "puntaje_red": "Puntaje red",
+                "brecha_puntaje": "Brecha vs red",
+                "favorable_sede": f"% favorable {focus_label}",
+                "cobertura_sede": f"% cobertura {focus_label}",
+            })
+            st.dataframe(dim_table[[
+                "Dimension",
+                f"Puntaje {focus_label}",
+                "Puntaje red",
+                "Brecha vs red",
+                f"% favorable {focus_label}",
+                f"% cobertura {focus_label}",
+            ]], use_container_width=True, hide_index=True)
+
+    # -------------------------
+    # Tabla directiva (se mantiene)
+    # -------------------------
     priority_df = indicator_bench.copy()
     priority_df["Semáforo"] = priority_df.apply(lambda r: socio_status_label(r["puntaje_sede"], r["brecha_puntaje"], r["cobertura_sede"]), axis=1)
     priority_df["Lectura sugerida"] = priority_df.apply(lambda r: socio_teacher_note(r["puntaje_sede"], r["brecha_puntaje"], r["cobertura_sede"]), axis=1)
 
-    strongest = priority_df.sort_values(["puntaje_sede", "brecha_puntaje"], ascending=[False, False]).head(1)
-    weakest = priority_df.sort_values(["brecha_puntaje", "puntaje_sede"], ascending=[True, True]).head(1)
-    lowest_cov = priority_df.sort_values(["cobertura_sede", "puntaje_sede"], ascending=[True, False]).head(1)
-
-    st.markdown("**Dónde mirar primero**")
-    k1, k2, k3 = st.columns(3)
-    if not strongest.empty:
-        row = strongest.iloc[0]
-        with k1:
-            render_socio_insight_card("Fortaleza más visible", str(row["Indicador"]), f"Puntaje sede {row['puntaje_sede']:.1f} | Brecha {row['brecha_puntaje']:+.1f} pp", theme["success"])
-    if not weakest.empty:
-        row = weakest.iloc[0]
-        with k2:
-            render_socio_insight_card("Alerta principal", str(row["Indicador"]), f"Puntaje sede {row['puntaje_sede']:.1f} | Brecha {row['brecha_puntaje']:+.1f} pp", theme["danger"])
-    if not lowest_cov.empty:
-        row = lowest_cov.iloc[0]
-        with k3:
-            render_socio_insight_card("Cobertura más baja", str(row["Indicador"]), f"Cobertura sede {row['cobertura_sede']:.1f}% | {row['Semáforo']}", theme["warning"])
-
-    teacher_table = priority_df[["Dimension", "Indicador", "puntaje_sede", "puntaje_red", "brecha_puntaje", "favorable_sede", "cobertura_sede", "Semáforo", "Lectura sugerida"]].rename(columns={
+    teacher_table = priority_df[[
+        "Indicador", "puntaje_sede", "puntaje_red", "brecha_puntaje",
+        "favorable_sede", "cobertura_sede", "Semáforo", "Lectura sugerida"
+    ]].rename(columns={
         "puntaje_sede": f"Puntaje {focus_label}",
         "puntaje_red": "Puntaje red",
         "brecha_puntaje": "Brecha vs red",
@@ -2441,138 +2469,249 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
     st.markdown("**Lectura por indicador para docentes y directivos**")
     st.dataframe(teacher_table, use_container_width=True, hide_index=True)
 
-    st.markdown("**Bajar al detalle: dimensión → indicador → preguntas**")
+    # ============================================================
+    # (Nuevo) Desglose por reactivos y opciones de respuesta
+    # ============================================================
+    st.markdown("## Desglose por reactivos (preguntas) y opciones de respuesta")
+    st.caption("Aquí el foco es entender *cómo están respondiendo* los niños en la sede: qué opciones se eligen más/menos frente a la red, y en qué preguntas se nota más la diferencia.")
 
-    dim_candidates = priority_df["Dimension"].dropna().unique().tolist()
-    dim_ordered = [d for d in socio_SOCIO_DIMENSION_ORDER if d in dim_candidates]
-    dim_ordered += [d for d in dim_candidates if d not in dim_ordered]
+    # Selección guiada por dimensión → indicador
+    dim_options = sorted(scoped["Dimension"].dropna().unique().tolist(), key=socio_dimension_sort_key)
+    if not dim_options:
+        st.info("No hay dimensiones disponibles con el filtro actual.")
+        return
 
-    selected_dimension = st.selectbox("Dimensión para explorar", dim_ordered, key="embedded_socio_dimension_selector")
-
-    indicator_options = (
-        priority_df.loc[priority_df["Dimension"] == selected_dimension, "Indicador"]
+    selected_dimension = st.selectbox("Dimensión", dim_options, key="socio_dimension_selector_v2")
+    ind_options = (
+        scoped[scoped["Dimension"] == selected_dimension]["Indicador"]
         .dropna()
-        .drop_duplicates()
+        .unique()
         .tolist()
     )
-    indicator_options = sorted(indicator_options, key=socio_indicator_sort_key)
-    selected_indicator = st.selectbox("Indicador para profundizar", indicator_options, key="embedded_socio_indicator_selector")
+    ind_options = sorted(ind_options, key=socio_indicator_sort_key)
+    if not ind_options:
+        st.info("No hay indicadores en esa dimensión con el filtro actual.")
+        return
 
-    # Vista rápida del banco (lo que *debería* aparecer) para este indicador
-    spec_subset = specs_df[specs_df["Indicador"] == selected_indicator].copy()
-    if not spec_subset.empty:
-        st.markdown("**Preguntas definidas para este indicador (banco de ítems)**")
-        st.dataframe(spec_subset[["Escala", "Inversa", "Pregunta", "SurveyScope"]], use_container_width=True, hide_index=True)
-    else:
-        st.info("No encontré preguntas definidas en el banco de ítems para este indicador. Revisa `socio_build_socio_question_specs()`.")
+    selected_indicator = st.selectbox("Indicador", ind_options, key="embedded_socio_indicator_selector_v2")
 
-    qsum = socio_question_summary(scoped[scoped["Indicador"] == selected_indicator], scoped_focus[scoped_focus["Indicador"] == selected_indicator])
+    ind_scoped = scoped[(scoped["Dimension"] == selected_dimension) & (scoped["Indicador"] == selected_indicator)].copy()
+    ind_focus = scoped_focus[(scoped_focus["Dimension"] == selected_dimension) & (scoped_focus["Indicador"] == selected_indicator)].copy()
+    if ind_scoped.empty or ind_focus.empty:
+        st.warning("No hay suficiente información para ese indicador en la sede o en la red filtrada.")
+        return
+
+    # Resumen por pregunta (puntaje + brecha + cobertura) + extremos de elección
+    qsum = socio_question_summary(ind_scoped, ind_focus)
     qsum = qsum[qsum["TexQuestion"].notna()].copy()
     if qsum.empty:
         st.info("No hay preguntas disponibles para ese indicador.")
         return
 
-    qsum = qsum.sort_values(["brecha_puntaje", "cobertura_sede", "puntaje_sede"], ascending=[True, True, True]).reset_index(drop=True)
-    question_options = qsum["TexQuestion"].tolist()
-    selected_question = st.selectbox(
-        "Pregunta guía",
-        question_options,
-        index=0,
-        format_func=lambda x: socio_wrap_plot_label(x, width=90, max_lines=2).replace("<br>", " "),
-        key="embedded_socio_question_selector",
+    meta = (
+        ind_scoped[["TexQuestion", "Escala", "Inversa"]]
+        .dropna(subset=["TexQuestion"])
+        .drop_duplicates("TexQuestion")
     )
-    qrow = qsum[qsum["TexQuestion"] == selected_question].iloc[0]
+    qsum = qsum.merge(meta, on="TexQuestion", how="left")
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Puntaje red", f"{qrow['puntaje_red']:.1f}")
-    m2.metric(f"Puntaje {focus_label}", f"{qrow['puntaje_sede']:.1f}" if pd.notna(qrow["puntaje_sede"]) else "Sin dato")
-    m3.metric("Brecha", f"{qrow['brecha_puntaje']:+.1f} pp" if pd.notna(qrow["brecha_puntaje"]) else "Sin dato")
-    m4.metric("Cobertura sede", f"{qrow['cobertura_sede']:.1f}%" if pd.notna(qrow["cobertura_sede"]) else "Sin dato")
-    st.markdown(f"**Pregunta:** {selected_question}")
+    focus_stats = (
+        ind_focus[ind_focus["Respuesta Reporte"].notna()]
+        .groupby("TexQuestion", dropna=False)
+        .agg(
+            respuestas_sede=("Respuesta Reporte", "count"),
+            estudiantes_sede=("OrgDefinedId", pd.Series.nunique),
+        )
+        .reset_index()
+    )
+    qsum = qsum.merge(focus_stats, on="TexQuestion", how="left").fillna({"respuestas_sede": 0, "estudiantes_sede": 0})
+    qsum["respuestas_sede"] = qsum["respuestas_sede"].astype(int)
+    qsum["estudiantes_sede"] = qsum["estudiantes_sede"].astype(int)
 
-    if selected_indicator == "Autoconciencia emocional":
-        st.markdown("**Autoconciencia emocional: aciertos y confusiones por emoción**")
-        emo_summary = socio_emotion_summary(scoped, scoped_focus, focus_label)
-        st.dataframe(emo_summary, use_container_width=True, hide_index=True)
+    extremes = []
+    for q in qsum["TexQuestion"].tolist():
+        ex = socio_question_choice_extremes(ind_scoped, ind_focus, q, focus_label)
+        if ex is None:
+            ex = {
+                "mas_opcion": "Sin dato", "mas_delta": 0.0, "mas_sede": 0.0, "mas_red": 0.0,
+                "menos_opcion": "Sin dato", "menos_delta": 0.0, "menos_sede": 0.0, "menos_red": 0.0,
+                "abs_delta": 0.0,
+            }
+        ex["TexQuestion"] = q
+        extremes.append(ex)
+    extremes_df = pd.DataFrame(extremes)
+    qsum = qsum.merge(extremes_df, on="TexQuestion", how="left")
 
-        cmat1, cmat2 = st.columns(2)
-        with cmat1:
-            st.markdown(f"**{focus_label}: cómo se confundieron las emociones**")
-            focus_matrix = socio_emotion_confusion_matrix(scoped_focus)
-            if focus_matrix.empty:
-                st.info("No hay suficiente detalle para esta sede.")
-            else:
-                fig = px.imshow(focus_matrix, text_auto=True, aspect="auto", title=f"{focus_label}: emoción objetivo vs respuesta elegida", color_continuous_scale=theme["heat_scale"])
-                apply_accessible_figure_style(fig, theme)
-                st.plotly_chart(fig, use_container_width=True)
-        with cmat2:
-            st.markdown("**Demás sedes: referencia de confusiones**")
-            other_matrix = socio_emotion_confusion_matrix(scoped[scoped["Sede Corta"] != focus_label].copy())
-            if other_matrix.empty:
-                st.info("No hay suficiente detalle en las demás sedes.")
-            else:
-                fig = px.imshow(other_matrix, text_auto=True, aspect="auto", title="Demás sedes: emoción objetivo vs respuesta elegida", color_continuous_scale=theme["heat_scale"])
-                apply_accessible_figure_style(fig, theme)
-                st.plotly_chart(fig, use_container_width=True)
+    qsum["Pregunta corta"] = qsum["TexQuestion"].map(lambda x: shorten_text(x, 120))
+    qsum = qsum.sort_values(["abs_delta", "brecha_puntaje", "cobertura_sede"], ascending=[False, True, True]).reset_index(drop=True)
 
-    else:
-        yes_no_table = socio_yes_no_summary(scoped, scoped_focus, focus_label, selected_indicator)
-        if not yes_no_table.empty:
-            st.markdown("**Conteo de respuestas Sí y No**")
-            st.dataframe(yes_no_table, use_container_width=True, hide_index=True)
-
-            chart_yes_no = yes_no_table.melt(id_vars=["Pregunta", "Respuesta Reporte"], value_vars=["Conteo sede", "Conteo demás sedes"], var_name="Serie", value_name="Conteo")
-            chart_yes_no["Serie"] = chart_yes_no["Serie"].map({"Conteo sede": focus_label, "Conteo demás sedes": "Demás sedes"})
-            fig = px.bar(
-                chart_yes_no,
-                x="Respuesta Reporte",
-                y="Conteo",
-                color="Serie",
-                facet_row="Pregunta",
-                barmode="group",
-                title="Sí y No por pregunta",
-                color_discrete_map={focus_label: theme["primary"], "Demás sedes": theme["muted"]},
-            )
-            fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
-            fig.update_layout(xaxis_title="", yaxis_title="Cantidad de respuestas")
-            apply_accessible_figure_style(fig, theme)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            red_profile = socio_response_profile(scoped, selected_question).rename(columns={"pct": "Red"})
-            focus_profile = socio_response_profile(scoped_focus, selected_question).rename(columns={"pct": focus_label})
-            merged = red_profile.merge(focus_profile, on="Respuesta Reporte", how="outer").fillna(0)
-            merged["Etiqueta"] = merged["Respuesta Reporte"].map(lambda x: socio_wrap_plot_label(x, width=24, max_lines=3))
-            merged["Pico"] = merged[["Red", focus_label]].max(axis=1)
-            merged = merged.sort_values("Pico", ascending=True)
-
-            fig = go.Figure()
-            fig.add_trace(go.Bar(y=merged["Etiqueta"], x=merged["Red"], name="Red", orientation="h", marker_color=theme["muted"]))
-            fig.add_trace(go.Bar(y=merged["Etiqueta"], x=merged[focus_label], name=focus_label, orientation="h", marker_color=theme["primary"]))
-            fig.update_layout(barmode="group", title="Cómo respondió la sede frente a la red", xaxis_title="% de estudiantes", yaxis_title="", height=max(360, 110 + 70 * len(merged)))
-            apply_accessible_figure_style(fig, theme)
-            st.plotly_chart(fig, use_container_width=True)
-
-    teacher_question_table = qsum[["TexQuestion", "puntaje_sede", "puntaje_red", "brecha_puntaje", "cobertura_sede"]].rename(columns={
-        "TexQuestion": "Pregunta",
-        "puntaje_sede": f"Puntaje {focus_label}",
-        "puntaje_red": "Puntaje red",
-        "brecha_puntaje": "Brecha vs red",
+    st.markdown("### Lectura rápida: qué se elige más y menos (vs red)")
+    quick_cols = [
+        "Pregunta corta", "Escala", "cobertura_sede",
+        "mas_opcion", "mas_delta", "menos_opcion", "menos_delta",
+        "respuestas_sede", "estudiantes_sede",
+    ]
+    quick = qsum[quick_cols].rename(columns={
         "cobertura_sede": f"% cobertura {focus_label}",
+        "mas_opcion": f"Opción más elegida en {focus_label} vs red",
+        "mas_delta": "Δ más (pp)",
+        "menos_opcion": f"Opción menos elegida en {focus_label} vs red",
+        "menos_delta": "Δ menos (pp)",
+        "respuestas_sede": "Respuestas sede",
+        "estudiantes_sede": "Estudiantes sede",
     })
-    st.dataframe(teacher_question_table, use_container_width=True, hide_index=True, height=260)
+    for col in [f"% cobertura {focus_label}"]:
+        quick[col] = quick[col].round(1)
+    st.dataframe(quick, use_container_width=True, hide_index=True, height=360)
 
-    with st.expander("Chequeo rápido de calidad del dato", expanded=False):
-        low_cov = qsum[qsum["cobertura_sede"] < 80][["TexQuestion", "cobertura_sede", "puntaje_sede", "brecha_puntaje"]].rename(columns={
-            "TexQuestion": "Pregunta",
-            "cobertura_sede": f"% cobertura {focus_label}",
-            "puntaje_sede": f"Puntaje {focus_label}",
-            "brecha_puntaje": "Brecha vs red",
-        })
-        if low_cov.empty:
-            st.success("En este indicador no hay alertas fuertes de cobertura para la sede focal.")
-        else:
-            st.dataframe(low_cov, use_container_width=True, hide_index=True)
+    # -------------------------
+    # (Nuevo) Mapa por escala: Δ pp (sede - red) para cada opción
+    # -------------------------
+    st.markdown("### Mapa de contraste: opciones elegidas (sede - red)")
+    st.caption("Valores positivos = {focus_label} elige más esa opción que la red; negativos = la elige menos.".format(focus_label=focus_label))
 
+    scales = [s for s in qsum["Escala"].dropna().unique().tolist() if str(s).strip()]
+    scales = sorted(scales)
+    for scale in scales:
+        q_scale = qsum[qsum["Escala"] == scale]["TexQuestion"].tolist()
+        if not q_scale:
+            continue
+
+        long_rows = []
+        observed_options = set()
+        for q in q_scale:
+            comp = socio_compare_option_distribution(ind_scoped, ind_focus, q, focus_label)
+            if comp.empty:
+                continue
+            comp["Pregunta"] = shorten_text(q, 85)
+            for opt in comp["Opción"].tolist():
+                observed_options.add(opt)
+            long_rows.append(comp[["Pregunta", "Opción", "Δ (pp)"]])
+
+        if not long_rows:
+            continue
+
+        long = pd.concat(long_rows, ignore_index=True)
+        pivot = long.pivot(index="Pregunta", columns="Opción", values="Δ (pp)").fillna(0.0)
+
+        col_order = socio_option_order_for_scale(scale, list(observed_options))
+        col_order = [c for c in col_order if c in pivot.columns] + [c for c in pivot.columns if c not in col_order]
+        pivot = pivot.reindex(columns=col_order)
+
+        z = float(np.nanmax(np.abs(pivot.to_numpy()))) if pivot.size else 1.0
+        z = max(1.0, float(np.ceil(z)))
+
+        diverging = [
+            [0.0, theme["danger"]],
+            [0.5, theme["warning"]],
+            [1.0, theme["success"]],
+        ]
+
+        fig = px.imshow(
+            pivot,
+            text_auto=".1f",
+            aspect="auto",
+            title=f"Δ (pp) {focus_label} - red · Escala: {scale}",
+            color_continuous_scale=diverging,
+            zmin=-z,
+            zmax=z,
+        )
+        fig.update_layout(
+            xaxis_title="Opciones de respuesta",
+            yaxis_title="Preguntas",
+            coloraxis_colorbar_title="Δ pp",
+            height=max(380, 70 + 32 * len(pivot.index)),
+        )
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # -------------------------
+    # Detalle por pregunta: distribución completa de opciones
+    # -------------------------
+    st.markdown("### Detalle por pregunta")
+    st.caption("Abre una pregunta para ver la distribución completa de opciones en la sede y en la red filtrada.")
+
+    for _, row in qsum.iterrows():
+        q = row["TexQuestion"]
+        scale = str(row.get("Escala") or "").strip()
+        header = f"{shorten_text(q, 140)}"
+        with st.expander(header, expanded=False):
+            comp = socio_compare_option_distribution(ind_scoped, ind_focus, q, focus_label)
+            if comp.empty:
+                st.info("No hay respuestas interpretables para esta pregunta con los filtros actuales.")
+                continue
+
+            order = socio_option_order_for_scale(scale, comp["Opción"].tolist())
+            comp["Opción"] = pd.Categorical(comp["Opción"], categories=order, ordered=True)
+            comp = comp.sort_values("Opción")
+
+            ex = socio_question_choice_extremes(ind_scoped, ind_focus, q, focus_label)
+            if ex:
+                st.markdown(
+                    f"**Más elegida vs red:** {ex['mas_opcion']} ({ex['mas_delta']:+.1f} pp) · "
+                    f"**Menos elegida vs red:** {ex['menos_opcion']} ({ex['menos_delta']:+.1f} pp)"
+                )
+
+            st.dataframe(comp, use_container_width=True, hide_index=True)
+
+            melted = comp.melt(id_vars="Opción", value_vars=["Red", focus_label], var_name="Serie", value_name="Porcentaje")
+            fig = px.bar(
+                melted,
+                y="Opción",
+                x="Porcentaje",
+                color="Serie",
+                barmode="group",
+                orientation="h",
+                title=f"Distribución de respuestas · {focus_label} vs red",
+                color_discrete_map={"Red": theme["muted"], focus_label: theme["primary"]},
+            )
+            fig.update_layout(xaxis_title="% de estudiantes", yaxis_title="")
+            apply_accessible_figure_style(fig, theme)
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.caption(
+                f"Cobertura en sede: {row['cobertura_sede']:.1f}% · "
+                f"Respuestas sede: {int(row.get('respuestas_sede', 0)):,} · "
+                f"Estudiantes sede: {int(row.get('estudiantes_sede', 0)):,}"
+            )
+
+    # Autoconciencia emocional: mantener vista de confusiones como referencia adicional
+    if selected_indicator == "Autoconciencia emocional":
+        with st.expander("Autoconciencia emocional: aciertos y confusiones (referencia adicional)", expanded=False):
+            emo_summary = socio_emotion_summary(scoped, scoped_focus, focus_label)
+            st.dataframe(emo_summary, use_container_width=True, hide_index=True)
+
+            cmat1, cmat2 = st.columns(2)
+            with cmat1:
+                st.markdown(f"**{focus_label}: emoción objetivo vs respuesta elegida**")
+                focus_matrix = socio_emotion_confusion_matrix(scoped_focus)
+                if focus_matrix.empty:
+                    st.info("No hay suficiente detalle para esta sede.")
+                else:
+                    fig = px.imshow(
+                        focus_matrix,
+                        text_auto=True,
+                        aspect="auto",
+                        title=f"{focus_label}: matriz de confusión",
+                        color_continuous_scale=theme["heat_scale"],
+                    )
+                    apply_accessible_figure_style(fig, theme)
+                    st.plotly_chart(fig, use_container_width=True)
+            with cmat2:
+                st.markdown("**Demás sedes: referencia**")
+                other_matrix = socio_emotion_confusion_matrix(scoped[scoped["Sede Corta"] != focus_label].copy())
+                if other_matrix.empty:
+                    st.info("No hay suficiente detalle en las demás sedes.")
+                else:
+                    fig = px.imshow(
+                        other_matrix,
+                        text_auto=True,
+                        aspect="auto",
+                        title="Demás sedes: matriz de confusión",
+                        color_continuous_scale=theme["heat_scale"],
+                    )
+                    apply_accessible_figure_style(fig, theme)
+                    st.plotly_chart(fig, use_container_width=True)
 
 def main() -> None:
     st.title("Evaluación Diagnóstica 2026 Calendario A")

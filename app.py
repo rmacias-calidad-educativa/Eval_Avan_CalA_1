@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,45 +11,129 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+
 st.set_page_config(page_title="Evaluación Diagnóstica 2026 Calendario A", layout="wide")
 
+# =========================
+# SOCIOEMOCIONAL
+# =========================
 
-socio_SOCIO_REQUIRED_COLUMNS = ['Sede', 'OrgDefinedId', 'EdadEst', 'Genero', 'Grado', 'Seccion', 'Antiguedad', 'SurveyName', 'TexQuestion', 'UsAnswerSurv']
-socio_COLUMN_ALIASES = {'género': 'Genero', 'genero': 'Genero', 'edad estudiante': 'Edad Estudiante', 'id estudiante': 'ID Estudiante', 'questionid': 'QuestionId', 'answerid': 'AnswerId', 'orgdefinedid': 'OrgDefinedId', 'edadest': 'EdadEst', 'texquestion': 'TexQuestion', 'usanswersurv': 'UsAnswerSurv', 'surveyname': 'SurveyName', 'seccion': 'Seccion', 'respuesta correcta': 'Respuesta Correcta'}
-socio_BASE_DIR = Path(__file__).resolve().parent if '__file__' in globals() else Path.cwd()
-socio_DEFAULT_DATA_CANDIDATES = [socio_BASE_DIR / 'data' / 'Auxiliares.xlsx', socio_BASE_DIR / 'Auxiliares.xlsx', Path('data') / 'Auxiliares.xlsx', Path('Auxiliares.xlsx')]
-socio_GRADE_ORDER = {'tercero': 3, 'cuarto': 4, 'quinto': 5, 'sexto': 6, 'septimo': 7, 'séptimo': 7, 'octavo': 8, 'noveno': 9, 'decimo': 10, 'décimo': 10, 'undecimo': 11, 'undécimo': 11, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, '11': 11}
-socio_SOCIO_INDICATOR_ORDER = ['Autoconciencia emocional', 'Empatía', 'Regulación emocional', 'Autoeficacia', 'Aprendizaje colaborativo', 'Efectos de cambio', 'Recursos físicos', 'Apoyo familiar', 'Prácticas docentes', 'Mentalidad de crecimiento']
-socio_SOCIO_DIMENSION_ORDER = ['Habilidades socioemocionales', 'Factores asociados', 'Situaciones de cambio', 'Mentalidad de crecimiento']
+socio_SOCIO_REQUIRED_COLUMNS = [
+    "Sede", "OrgDefinedId", "EdadEst", "Genero", "Grado", "Seccion",
+    "Antiguedad", "SurveyName", "TexQuestion", "UsAnswerSurv"
+]
+socio_COLUMN_ALIASES = {
+    "género": "Genero",
+    "genero": "Genero",
+    "edad estudiante": "Edad Estudiante",
+    "id estudiante": "ID Estudiante",
+    "questionid": "QuestionId",
+    "answerid": "AnswerId",
+    "orgdefinedid": "OrgDefinedId",
+    "edadest": "EdadEst",
+    "texquestion": "TexQuestion",
+    "usanswersurv": "UsAnswerSurv",
+    "surveyname": "SurveyName",
+    "seccion": "Seccion",
+    "respuesta correcta": "Respuesta Correcta",
+}
+socio_BASE_DIR = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+socio_DEFAULT_DATA_CANDIDATES = [
+    socio_BASE_DIR / "data" / "Auxiliares.xlsx",
+    socio_BASE_DIR / "Auxiliares.xlsx",
+    Path("data") / "Auxiliares.xlsx",
+    Path("Auxiliares.xlsx"),
+]
+socio_GRADE_ORDER = {
+    "tercero": 3, "cuarto": 4, "quinto": 5, "sexto": 6, "septimo": 7, "séptimo": 7,
+    "octavo": 8, "noveno": 9, "decimo": 10, "décimo": 10, "undecimo": 11, "undécimo": 11,
+    "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "10": 10, "11": 11,
+}
+socio_SOCIO_INDICATOR_ORDER = [
+    "Autoconciencia emocional",
+    "Empatía",
+    "Regulación emocional",
+    "Aprendizaje colaborativo",
+    "Efectos de cambio",
+    "Recursos físicos",
+    "Apoyo familiar",
+    "Prácticas docentes",
+    "Mentalidad de crecimiento",
+]
+socio_SOCIO_DIMENSION_ORDER = [
+    "Habilidades socioemocionales",
+    "Factores asociados",
+    "Situaciones de cambio",
+    "Mentalidad de crecimiento",
+]
+
+SOCIO_DISPLAY_MAPS = {
+    "emotion": {
+        "alegria": "Alegría",
+        "rabia": "Rabia",
+        "tristeza": "Tristeza",
+        "sorpresa": "Sorpresa",
+    },
+    "yes_no": {"si": "Sí", "no": "No"},
+    "three_mucho": {"ningun dia": "Ningún día", "algunos dias": "Algunos días", "muchos dias": "Muchos días"},
+    "three_mucho_literal": {"nada": "Nada", "poco": "Poco", "mucho": "Mucho"},
+    "si_algunas_no": {"no": "No", "algunas veces": "Algunas veces", "si": "Sí"},
+    "agree4": {
+        "muy en desacuerdo": "Muy en desacuerdo",
+        "en desacuerdo": "En desacuerdo",
+        "de acuerdo": "De acuerdo",
+        "muy de acuerdo": "Muy de acuerdo",
+    },
+    "freq4": {
+        "nunca": "Nunca",
+        "pocas veces": "Pocas veces",
+        "muchas veces": "Muchas veces",
+        "siempre": "Siempre",
+    },
+    "satisfaction3": {"insatisfecho": "Insatisfecho", "me da igual": "Me da igual", "satisfecho": "Satisfecho"},
+    "learn_compare": {
+        "aprendo menos que cuando estaba en casa": "Aprendo menos que cuando estaba en casa",
+        "aprendo igual que cuando estaba en casa": "Aprendo igual que cuando estaba en casa",
+        "aprendo mas que cuando estaba en casa": "Aprendo más que cuando estaba en casa",
+    },
+}
+
 
 def socio_strip_accents(text: str) -> str:
-    text = unicodedata.normalize('NFKD', str(text))
-    return ''.join((ch for ch in text if not unicodedata.combining(ch)))
+    text = unicodedata.normalize("NFKD", str(text))
+    return "".join(ch for ch in text if not unicodedata.combining(ch))
+
 
 def socio_normalize_text_key(value) -> str:
     if pd.isna(value):
-        return ''
-    raw = socio_strip_accents(str(value)).replace('\xa0', ' ')
-    raw = re.sub('\\s+', ' ', raw).strip().lower()
-    if raw in {'nan', 'none'}:
-        return ''
-    raw = raw.replace('deacuerdo', 'de acuerdo')
+        return ""
+    raw = socio_strip_accents(str(value)).replace("\xa0", " ")
+    raw = re.sub(r"\s+", " ", raw).strip().lower()
+    if raw in {"nan", "none"}:
+        return ""
+    raw = raw.replace("deacuerdo", "de acuerdo")
     return raw
+
+
 socio_INDICATOR_ORDER_MAP = {x.lower(): i for i, x in enumerate(socio_SOCIO_INDICATOR_ORDER, start=1)}
 socio_DIMENSION_ORDER_MAP = {x.lower(): i for i, x in enumerate(socio_SOCIO_DIMENSION_ORDER, start=1)}
+
 
 def socio_indicator_sort_key(value: str) -> tuple[int, str]:
     raw = str(value).strip()
     return (socio_INDICATOR_ORDER_MAP.get(raw.lower(), 999), raw)
 
+
 def socio_dimension_sort_key(value: str) -> tuple[int, str]:
     raw = str(value).strip()
     return (socio_DIMENSION_ORDER_MAP.get(raw.lower(), 999), raw)
 
+
 def socio_clean_sede_label(value: str) -> str:
     raw = str(value).strip()
-    cleaned = re.sub('^\\s*innova\\s+', '', raw, flags=re.I)
+    cleaned = re.sub(r"^\s*innova\s+", "", raw, flags=re.I)
     return cleaned.title() if cleaned else raw
+
 
 def socio_normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     cols = []
@@ -59,6 +144,7 @@ def socio_normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     out.columns = cols
     return out
 
+
 def socio_grade_sort_key(value: str) -> tuple[int, str]:
     raw = str(value).strip()
     if not raw:
@@ -66,39 +152,43 @@ def socio_grade_sort_key(value: str) -> tuple[int, str]:
     normalized = socio_strip_accents(raw).lower()
     if normalized in socio_GRADE_ORDER:
         return (socio_GRADE_ORDER[normalized], raw)
-    m = re.search('(\\d+)', normalized)
+    m = re.search(r"(\d+)", normalized)
     if m:
         return (int(m.group(1)), raw)
     return (999, raw)
+
 
 def socio_grade_display_label(value: str) -> str:
     raw = str(value).strip()
     normalized = socio_strip_accents(raw).lower()
     if normalized in socio_GRADE_ORDER:
-        return f'{socio_GRADE_ORDER[normalized]}°'
-    m = re.search('(\\d+)', normalized)
+        return f"{socio_GRADE_ORDER[normalized]}°"
+    m = re.search(r"(\d+)", normalized)
     if m:
-        return f'{int(m.group(1))}°'
+        return f"{int(m.group(1))}°"
     return raw
+
 
 def socio_course_sort_key(value: str) -> tuple[int, str]:
     raw = str(value).strip()
     if not raw:
         return (999, raw)
-    m = re.search('(\\d+)', raw)
+    m = re.search(r"(\d+)", raw)
     num = int(m.group(1)) if m else 999
     return (num, raw)
 
-def socio_wrap_plot_label(value: str, width: int=34, max_lines: int=4) -> str:
-    raw = str(value).strip().replace('\n', ' ')
-    raw = re.sub('\\s+', ' ', raw)
+
+def socio_wrap_plot_label(value: str, width: int = 34, max_lines: int = 4) -> str:
+    raw = str(value).strip().replace("\n", " ")
+    raw = re.sub(r"\s+", " ", raw)
     if not raw:
-        return ''
+        return ""
     lines = textwrap.wrap(raw, width=width, break_long_words=False, break_on_hyphens=False)
     if max_lines and len(lines) > max_lines:
         lines = lines[:max_lines]
-        lines[-1] = lines[-1].rstrip(' .,;:') + '…'
-    return '<br>'.join(lines)
+        lines[-1] = lines[-1].rstrip(" .,;:") + "…"
+    return "<br>".join(lines)
+
 
 def socio_load_default_file_if_exists() -> Path | None:
     for path in socio_DEFAULT_DATA_CANDIDATES:
@@ -106,435 +196,501 @@ def socio_load_default_file_if_exists() -> Path | None:
             return path
     return None
 
+
 @st.cache_data(show_spinner=False)
 def socio_read_dataframe_from_path(path_str: str, file_version: int) -> pd.DataFrame:
     path = Path(path_str)
     suffix = path.suffix.lower()
-    if suffix == '.csv':
+    if suffix == ".csv":
         try:
-            return pd.read_csv(path, encoding='utf-8-sig')
+            return pd.read_csv(path, encoding="utf-8-sig")
         except Exception:
-            return pd.read_csv(path, sep=None, engine='python')
-    if suffix in ['.xlsx', '.xls']:
+            return pd.read_csv(path, sep=None, engine="python")
+    if suffix in [".xlsx", ".xls"]:
         return pd.read_excel(path)
-    raise ValueError('Formato no soportado. Usa CSV o Excel.')
+    raise ValueError("Formato no soportado. Usa CSV o Excel.")
 
-@st.cache_data(show_spinner=False)
-def socio_read_uploaded_file(uploaded_file) -> pd.DataFrame:
-    name = uploaded_file.name.lower()
-    if name.endswith('.csv'):
-        uploaded_file.seek(0)
-        try:
-            return pd.read_csv(uploaded_file, encoding='utf-8-sig')
-        except Exception:
-            uploaded_file.seek(0)
-            return pd.read_csv(uploaded_file, sep=None, engine='python')
-    if name.endswith('.xlsx') or name.endswith('.xls'):
-        uploaded_file.seek(0)
-        return pd.read_excel(uploaded_file)
-    raise ValueError('Formato no soportado. Usa CSV o Excel.')
 
 def socio_validate_columns(df: pd.DataFrame) -> list[str]:
     return [c for c in socio_SOCIO_REQUIRED_COLUMNS if c not in df.columns]
 
+
 def socio_build_socio_question_specs() -> list[dict]:
     specs: list[dict] = []
 
-    def add(indicator: str, dimension: str, scale: str, questions: list[str], reverse: list[str] | None=None, survey_scope: list[str] | None=None) -> None:
+    def add(indicator: str, dimension: str, scale: str, questions: list[str], reverse: list[str] | None = None, survey_scope: list[str] | None = None) -> None:
         reverse_keys = {socio_normalize_text_key(x) for x in reverse or []}
         scope = {str(x) for x in survey_scope or []}
         for q in questions:
             q_key = socio_normalize_text_key(q)
-            specs.append({'question_key': q_key, 'indicator': indicator, 'dimension': dimension, 'scale': scale, 'reverse': q_key in reverse_keys, 'survey_scope': scope})
-    add('Autoconciencia emocional', 'Habilidades socioemocionales', 'emotion', ['Alegria', 'Rabia', 'Tristeza', 'Sorpresa'], survey_scope=['Auxiliar Educación básica primaria'])
-    add('Empatía', 'Habilidades socioemocionales', 'yes_no', ['Me afecta cuando veo que alguien molesta a un amigo o una amiga.', 'Me enojo cuando veo que tratan mal a otra persona.', 'Me preocupa cuando alguien se siente mal.', 'Me siento triste cuando veo que una persona se siente triste.'])
-    add('Regulación emocional', 'Habilidades socioemocionales', 'yes_no', ['Les digo a mis padres lo que siento en ese momento.', 'Me encierro en mi cuarto.', 'Prefiero NO hablar con mis padres.', 'Respiro profundamente para calmarme.'], reverse=['Me encierro en mi cuarto.', 'Prefiero NO hablar con mis padres.'])
-    add('Autoeficacia', 'Habilidades socioemocionales', 'yes_no', ['Cuando NO sé hacer bien algo que me gusta. práctico mucho hasta lograrlo.', 'Cuando NO sé hacer bien algo que me gusta. practico mucho hasta lograrlo.', 'Cuando tengo el tiempo suficiente. puedo hacer todas las tareas que me ponen.', 'Estoy decidido a aprender todo lo que nos enseñen en el colegio.', 'Hago cosas para lograr lo que quiero.', 'Entiendo la importancia de esforzarme en el estudio para No perder materias o repetir años', 'Entiendo la importancia de esforzarme en el estudio para NO perder materias o repetir años.'])
-    add('Aprendizaje colaborativo', 'Factores asociados', 'three_mucho_literal', ['Respeto las ideas de todos mis compañeros cuando trabajo en grupo.', 'Aprendo más cuando trabajo con otros compañeros.', 'Mis compañeros me pueden ayudar si es necesario.'])
-    add('Efectos de cambio', 'Situaciones de cambio', 'yes_no', ['Me siento solo.', 'Disfruto aprendiendo con mis profesores y compañeros.', 'Volví a jugar y hacer deportes.', 'Tengo otras formas de hablar con mis amigos.'], reverse=['Me siento solo.'], survey_scope=['Auxiliar Educación básica primaria'])
-    add('Efectos de cambio', 'Situaciones de cambio', 'agree4', ['Me siento solo.', 'Disfruto aprendiendo con mis profesores y compañeros.', 'Disfruto aprendiendo en mi colegio.', 'Tengo otras formas de interactuar con mis amigos.'], reverse=['Me siento solo.'], survey_scope=['Auxiliar educación básica secundaria', 'Auxiliar educación media'])
-    add('Efectos de cambio', 'Situaciones de cambio', 'learn_compare', ['Desde que regresé a mi colegio:'])
-    add('Efectos de cambio', 'Situaciones de cambio', 'satisfaction3', ['Las instrucciones de las actividades proporcionadas por mis docentes', 'Desde que regresé a mi colegio. estoy satisfecho con:Las instrucciones de las actividades proporcionadas por mis docentes', 'El apoyo que recibo de mis docentes.', 'Los recursos para el aprendizaje proporcionados por mi colegio. tales como libros. cartillas. guías. entre otros.', 'La cantidad de tareas que me envían para la casa.'])
-    add('Recursos físicos', 'Situaciones de cambio', 'si_algunas_no', ['Puedo usar internet.', 'Mi internet funciona para completar mis tareas escolares', 'Puedo usar un dispositivo como celular. tableta o computador cuando lo necesito', 'Tengo un espacio tranquilo para estudiar.', 'Puedo usar material impreso como libros. guías o cartillas para completar mis tareas escolares.', 'Tengo los útiles escolares necesarios como cuadernos o lápices', 'Donde vivo: Tengo que compartir un dispositivo como celular. tableta o computador para hacer mis tareas'], reverse=['Donde vivo: Tengo que compartir un dispositivo como celular. tableta o computador para hacer mis tareas'], survey_scope=['Auxiliar Educación básica primaria'])
-    add('Recursos físicos', 'Situaciones de cambio', 'freq4', ['Tengo acceso a internet.', 'Mi internet es adecuado para completar mis tareas escolares.', 'Tengo acceso cuando lo necesito a un dispositivo como celular. tableta o computador.', 'Tengo un espacio tranquilo para estudiar.', 'Tengo que compartir un dispositivo como celular. tableta o computador para hacer mis tareas.', 'Tengo acceso a material impreso como libros. guías o cartillas para completar mis tareas escolares.', 'Tengo los útiles escolares necesarios como cuadremos o lápices.', 'Tengo que estudiar y también cuidar a una persona que vive en mi casa'], reverse=['Tengo que compartir un dispositivo como celular. tableta o computador para hacer mis tareas.', 'Tengo que estudiar y también cuidar a una persona que vive en mi casa'], survey_scope=['Auxiliar educación básica secundaria', 'Auxiliar educación media'])
-    add('Apoyo familiar', 'Situaciones de cambio', 'three_mucho', ['Me ayuda con las tareas escolares.', 'Me pregunta los temas que estoy estudiando.', 'Me revisa que haga las tareas escolares.', 'Me explica temas difíciles.', 'Me enseña de diferentes maneras.'], survey_scope=['Auxiliar Educación básica primaria'])
-    add('Apoyo familiar', 'Situaciones de cambio', 'freq4', ['Me ayuda con tareas escolares.', 'Me pregunta qué estoy aprendiendo.', 'Se asegura que avance en mis tareas escolares', 'Me explica temas difíciles.', 'Me ayuda a encontrar herramientas adicionales para el aprendizaje'], survey_scope=['Auxiliar educación básica secundaria'])
-    add('Prácticas docentes', 'Situaciones de cambio', 'three_mucho', ['Desde que regresé a mi colegio. cuántos días mis docentes:Me envían tareas.', 'Desde que regresé a mi colegio. cuántos días mis docentes:Me ayudan con mis tareas cuando lo necesito.', 'Desde que regresé a mi colegio. cuántos días mis docentes:Me envían actividades y evaluaciones por internet'], survey_scope=['Auxiliar Educación básica primaria'])
-    add('Prácticas docentes', 'Situaciones de cambio', 'freq4', ['Mis docentes me envían tareas.', 'Mis docentes están disponibles cuando necesito ayuda. por ejemplo. a través de horas de atención. teléfono. correo electrónico. chat. entre otros.', 'Mis docentes me envían actividades y evaluaciones por internet.', 'Mis docentes me envían actividades y evaluaciones para internet.', 'Mis docentes me brindan consejos útiles sobre cómo aprender más efectivamente por mi cuenta.'], survey_scope=['Auxiliar educación básica secundaria', 'Auxiliar educación media'])
-    add('Mentalidad de crecimiento', 'Mentalidad de crecimiento', 'agree4', ['Puedo aprender por mi cuenta gracias a lo que me han enseñado mis docentes.', 'Creo en mi talento e inteligencia aunque me equivoque o se me dificulte entender.', 'Creo en mi talento e inteligencia. aunque me equivoque o se me dificulte entender.', 'Puedo mejorar mi rendimiento académico con mi esfuerzo y la ayuda de mis docentes.', 'Mis docentes clasifican y separan a los que más y menos entienden de un tema.', 'Pienso que algunos estudiantes son más inteligentes que otros por las notas que obtienen.', 'Siento que mis docentes nos dan a todos las mismas oportunidades para aprender y tener buenas notas.', 'Creo que es más difícil aprender si me equivoco en las actividades de clase.', 'Mis docentes me han enseñado que cuando me equivoco tengo la oportunidad de aprender.', 'Confío en que si me equivoco puedo probar diferentes opciones para aprender.'], reverse=['Mis docentes clasifican y separan a los que más y menos entienden de un tema.', 'Pienso que algunos estudiantes son más inteligentes que otros por las notas que obtienen.', 'Creo que es más difícil aprender si me equivoco en las actividades de clase.'])
+            specs.append({
+                "question_key": q_key,
+                "indicator": indicator,
+                "dimension": dimension,
+                "scale": scale,
+                "reverse": q_key in reverse_keys,
+                "survey_scope": scope,
+            })
+
+    add("Autoconciencia emocional", "Habilidades socioemocionales", "emotion", ["Alegria", "Rabia", "Tristeza", "Sorpresa"], survey_scope=["Auxiliar Educación básica primaria"])
+    add("Empatía", "Habilidades socioemocionales", "yes_no", [
+        "Me afecta cuando veo que alguien molesta a un amigo o una amiga.",
+        "Me enojo cuando veo que tratan mal a otra persona.",
+        "Me preocupa cuando alguien se siente mal.",
+        "Me siento triste cuando veo que una persona se siente triste.",
+    ])
+    add("Regulación emocional", "Habilidades socioemocionales", "yes_no", [
+        "Les digo a mis padres lo que siento en ese momento.",
+        "Me encierro en mi cuarto.",
+        "Prefiero NO hablar con mis padres.",
+        "Respiro profundamente para calmarme.",
+    ], reverse=["Me encierro en mi cuarto.", "Prefiero NO hablar con mis padres."])
+    # Autoeficacia se elimina del tablero por solicitud del usuario.
+    add("Aprendizaje colaborativo", "Factores asociados", "three_mucho_literal", [
+        "Respeto las ideas de todos mis compañeros cuando trabajo en grupo.",
+        "Aprendo más cuando trabajo con otros compañeros.",
+        "Mis compañeros me pueden ayudar si es necesario.",
+    ])
+    add("Efectos de cambio", "Situaciones de cambio", "yes_no", [
+        "Me siento solo.",
+        "Disfruto aprendiendo con mis profesores y compañeros.",
+        "Volví a jugar y hacer deportes.",
+        "Tengo otras formas de hablar con mis amigos.",
+    ], reverse=["Me siento solo."], survey_scope=["Auxiliar Educación básica primaria"])
+    add("Efectos de cambio", "Situaciones de cambio", "agree4", [
+        "Me siento solo.",
+        "Disfruto aprendiendo con mis profesores y compañeros.",
+        "Disfruto aprendiendo en mi colegio.",
+        "Tengo otras formas de interactuar con mis amigos.",
+    ], reverse=["Me siento solo."], survey_scope=["Auxiliar educación básica secundaria", "Auxiliar educación media"])
+    add("Efectos de cambio", "Situaciones de cambio", "learn_compare", ["Desde que regresé a mi colegio:"])
+    add("Efectos de cambio", "Situaciones de cambio", "satisfaction3", [
+        "Las instrucciones de las actividades proporcionadas por mis docentes",
+        "Desde que regresé a mi colegio. estoy satisfecho con:Las instrucciones de las actividades proporcionadas por mis docentes",
+        "El apoyo que recibo de mis docentes.",
+        "Los recursos para el aprendizaje proporcionados por mi colegio. tales como libros. cartillas. guías. entre otros.",
+        "La cantidad de tareas que me envían para la casa.",
+    ])
+    add("Recursos físicos", "Situaciones de cambio", "si_algunas_no", [
+        "Puedo usar internet.",
+        "Mi internet funciona para completar mis tareas escolares",
+        "Puedo usar un dispositivo como celular. tableta o computador cuando lo necesito",
+        "Tengo un espacio tranquilo para estudiar.",
+        "Puedo usar material impreso como libros. guías o cartillas para completar mis tareas escolares.",
+        "Tengo los útiles escolares necesarios como cuadernos o lápices",
+        "Donde vivo: Tengo que compartir un dispositivo como celular. tableta o computador para hacer mis tareas",
+    ], reverse=["Donde vivo: Tengo que compartir un dispositivo como celular. tableta o computador para hacer mis tareas"], survey_scope=["Auxiliar Educación básica primaria"])
+    add("Recursos físicos", "Situaciones de cambio", "freq4", [
+        "Tengo acceso a internet.",
+        "Mi internet es adecuado para completar mis tareas escolares.",
+        "Tengo acceso cuando lo necesito a un dispositivo como celular. tableta o computador.",
+        "Tengo un espacio tranquilo para estudiar.",
+        "Tengo que compartir un dispositivo como celular. tableta o computador para hacer mis tareas.",
+        "Tengo acceso a material impreso como libros. guías o cartillas para completar mis tareas escolares.",
+        "Tengo los útiles escolares necesarios como cuadremos o lápices.",
+        "Tengo que estudiar y también cuidar a una persona que vive en mi casa",
+    ], reverse=[
+        "Tengo que compartir un dispositivo como celular. tableta o computador para hacer mis tareas.",
+        "Tengo que estudiar y también cuidar a una persona que vive en mi casa",
+    ], survey_scope=["Auxiliar educación básica secundaria", "Auxiliar educación media"])
+    add("Apoyo familiar", "Situaciones de cambio", "three_mucho", [
+        "Me ayuda con las tareas escolares.",
+        "Me pregunta los temas que estoy estudiando.",
+        "Me revisa que haga las tareas escolares.",
+        "Me explica temas difíciles.",
+        "Me enseña de diferentes maneras.",
+    ], survey_scope=["Auxiliar Educación básica primaria"])
+    add("Apoyo familiar", "Situaciones de cambio", "freq4", [
+        "Me ayuda con tareas escolares.",
+        "Me pregunta qué estoy aprendiendo.",
+        "Se asegura que avance en mis tareas escolares",
+        "Me explica temas difíciles.",
+        "Me ayuda a encontrar herramientas adicionales para el aprendizaje",
+    ], survey_scope=["Auxiliar educación básica secundaria"])
+    add("Prácticas docentes", "Situaciones de cambio", "three_mucho", [
+        "Desde que regresé a mi colegio. cuántos días mis docentes:Me envían tareas.",
+        "Desde que regresé a mi colegio. cuántos días mis docentes:Me ayudan con mis tareas cuando lo necesito.",
+        "Desde que regresé a mi colegio. cuántos días mis docentes:Me envían actividades y evaluaciones por internet",
+    ], survey_scope=["Auxiliar Educación básica primaria"])
+    add("Prácticas docentes", "Situaciones de cambio", "freq4", [
+        "Mis docentes me envían tareas.",
+        "Mis docentes están disponibles cuando necesito ayuda. por ejemplo. a través de horas de atención. teléfono. correo electrónico. chat. entre otros.",
+        "Mis docentes me envían actividades y evaluaciones por internet.",
+        "Mis docentes me envían actividades y evaluaciones para internet.",
+        "Mis docentes me brindan consejos útiles sobre cómo aprender más efectivamente por mi cuenta.",
+    ], survey_scope=["Auxiliar educación básica secundaria", "Auxiliar educación media"])
+    add("Mentalidad de crecimiento", "Mentalidad de crecimiento", "agree4", [
+        "Puedo aprender por mi cuenta gracias a lo que me han enseñado mis docentes.",
+        "Creo en mi talento e inteligencia aunque me equivoque o se me dificulte entender.",
+        "Creo en mi talento e inteligencia. aunque me equivoque o se me dificulte entender.",
+        "Puedo mejorar mi rendimiento académico con mi esfuerzo y la ayuda de mis docentes.",
+        "Mis docentes clasifican y separan a los que más y menos entienden de un tema.",
+        "Pienso que algunos estudiantes son más inteligentes que otros por las notas que obtienen.",
+        "Siento que mis docentes nos dan a todos las mismas oportunidades para aprender y tener buenas notas.",
+        "Creo que es más difícil aprender si me equivoco en las actividades de clase.",
+        "Mis docentes me han enseñado que cuando me equivoco tengo la oportunidad de aprender.",
+        "Confío en que si me equivoco puedo probar diferentes opciones para aprender.",
+    ], reverse=[
+        "Mis docentes clasifican y separan a los que más y menos entienden de un tema.",
+        "Pienso que algunos estudiantes son más inteligentes que otros por las notas que obtienen.",
+        "Creo que es más difícil aprender si me equivoco en las actividades de clase.",
+    ])
     return specs
+
+
 socio_SOCIO_QUESTION_SPECS = socio_build_socio_question_specs()
+
 
 def socio_get_socio_question_spec(question: str, survey_name: str) -> dict | None:
     q_key = socio_normalize_text_key(question)
     survey_name = str(survey_name)
     for spec in socio_SOCIO_QUESTION_SPECS:
-        if spec['question_key'] != q_key:
+        if spec["question_key"] != q_key:
             continue
-        if not spec['survey_scope'] or survey_name in spec['survey_scope']:
+        if not spec["survey_scope"] or survey_name in spec["survey_scope"]:
             return spec
     return None
 
-def socio_ordinal_score(scale: str, answer_key: str, reverse: bool, expected_key: str='') -> float:
+
+def socio_ordinal_score(scale: str, answer_key: str, reverse: bool, expected_key: str = "") -> float:
     if not answer_key:
         return np.nan
-    if scale == 'emotion':
+    if scale == "emotion":
         return 100.0 if answer_key == expected_key else 0.0
-    if scale == 'yes_no':
-        mapping = {'no': 0.0, 'si': 100.0}
-    elif scale == 'three_mucho':
-        mapping = {'ningun dia': 0.0, 'algunos dias': 50.0, 'muchos dias': 100.0}
-    elif scale == 'three_mucho_literal':
-        mapping = {'nada': 0.0, 'poco': 50.0, 'mucho': 100.0}
-    elif scale == 'si_algunas_no':
-        mapping = {'no': 0.0, 'algunas veces': 50.0, 'si': 100.0}
-    elif scale == 'agree4':
-        mapping = {'muy en desacuerdo': 0.0, 'en desacuerdo': 33.0, 'de acuerdo': 67.0, 'muy de acuerdo': 100.0}
-    elif scale == 'freq4':
-        mapping = {'nunca': 0.0, 'pocas veces': 33.0, 'muchas veces': 67.0, 'siempre': 100.0}
-    elif scale == 'satisfaction3':
-        mapping = {'insatisfecho': 0.0, 'me da igual': 50.0, 'satisfecho': 100.0}
-    elif scale == 'learn_compare':
-        mapping = {'aprendo menos que cuando estaba en casa': 0.0, 'aprendo igual que cuando estaba en casa': 50.0, 'aprendo mas que cuando estaba en casa': 100.0}
+    if scale == "yes_no":
+        mapping = {"no": 0.0, "si": 100.0}
+    elif scale == "three_mucho":
+        mapping = {"ningun dia": 0.0, "algunos dias": 50.0, "muchos dias": 100.0}
+    elif scale == "three_mucho_literal":
+        mapping = {"nada": 0.0, "poco": 50.0, "mucho": 100.0}
+    elif scale == "si_algunas_no":
+        mapping = {"no": 0.0, "algunas veces": 50.0, "si": 100.0}
+    elif scale == "agree4":
+        mapping = {"muy en desacuerdo": 0.0, "en desacuerdo": 33.0, "de acuerdo": 67.0, "muy de acuerdo": 100.0}
+    elif scale == "freq4":
+        mapping = {"nunca": 0.0, "pocas veces": 33.0, "muchas veces": 67.0, "siempre": 100.0}
+    elif scale == "satisfaction3":
+        mapping = {"insatisfecho": 0.0, "me da igual": 50.0, "satisfecho": 100.0}
+    elif scale == "learn_compare":
+        mapping = {
+            "aprendo menos que cuando estaba en casa": 0.0,
+            "aprendo igual que cuando estaba en casa": 50.0,
+            "aprendo mas que cuando estaba en casa": 100.0,
+        }
     else:
         return np.nan
+
     value = mapping.get(answer_key, np.nan)
     if pd.isna(value):
         return np.nan
     return 100.0 - float(value) if reverse else float(value)
 
-def socio_favorable_topbox(scale: str, answer_key: str, reverse: bool, expected_key: str='') -> float:
+
+def socio_favorable_topbox(scale: str, answer_key: str, reverse: bool, expected_key: str = "") -> float:
     if not answer_key:
         return np.nan
-    if scale == 'emotion':
+    if scale == "emotion":
         return 1.0 if answer_key == expected_key else 0.0
-    if scale == 'agree4':
-        positive = {'de acuerdo', 'muy de acuerdo'}
+    if scale == "agree4":
+        positive = {"de acuerdo", "muy de acuerdo"}
         if reverse:
-            positive = {'en desacuerdo', 'muy en desacuerdo'}
-    elif scale == 'freq4':
-        positive = {'muchas veces', 'siempre'}
+            positive = {"en desacuerdo", "muy en desacuerdo"}
+    elif scale == "freq4":
+        positive = {"muchas veces", "siempre"}
         if reverse:
-            positive = {'nunca', 'pocas veces'}
-    elif scale == 'yes_no':
-        positive = {'si'}
+            positive = {"nunca", "pocas veces"}
+    elif scale == "yes_no":
+        positive = {"si"}
         if reverse:
-            positive = {'no'}
-    elif scale == 'three_mucho':
-        positive = {'muchos dias'}
+            positive = {"no"}
+    elif scale == "three_mucho":
+        positive = {"muchos dias"}
         if reverse:
-            positive = {'ningun dia'}
-    elif scale == 'three_mucho_literal':
-        positive = {'mucho'}
+            positive = {"ningun dia"}
+    elif scale == "three_mucho_literal":
+        positive = {"mucho"}
         if reverse:
-            positive = {'nada'}
-    elif scale == 'si_algunas_no':
-        positive = {'si'}
+            positive = {"nada"}
+    elif scale == "si_algunas_no":
+        positive = {"si"}
         if reverse:
-            positive = {'no'}
-    elif scale == 'satisfaction3':
-        positive = {'satisfecho'}
+            positive = {"no"}
+    elif scale == "satisfaction3":
+        positive = {"satisfecho"}
         if reverse:
-            positive = {'insatisfecho'}
-    elif scale == 'learn_compare':
-        positive = {'aprendo mas que cuando estaba en casa'}
+            positive = {"insatisfecho"}
+    elif scale == "learn_compare":
+        positive = {"aprendo mas que cuando estaba en casa"}
         if reverse:
-            positive = {'aprendo menos que cuando estaba en casa'}
+            positive = {"aprendo menos que cuando estaba en casa"}
     else:
         return np.nan
     return 1.0 if answer_key in positive else 0.0
 
+
+def socio_report_answer_label(scale: str, answer_key: str, raw_value) -> str | float:
+    if not answer_key or answer_key in {"0", "0.0"}:
+        return np.nan
+    mapping = SOCIO_DISPLAY_MAPS.get(scale, {})
+    if mapping:
+        return mapping.get(answer_key, np.nan)
+    raw = str(raw_value).strip()
+    if raw in {"", "0", "0.0", "nan", "None"}:
+        return np.nan
+    return raw
+
+
 @st.cache_data(show_spinner=False)
 def socio_prepare_socio_data(raw: pd.DataFrame) -> pd.DataFrame:
     df = socio_normalize_columns(raw)
-    for col in ['EdadEst', 'Antiguedad']:
+
+    for col in ["EdadEst", "Antiguedad"]:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    text_cols = ['Sede', 'OrgDefinedId', 'Genero', 'Grado', 'Seccion', 'SurveyName', 'TexQuestion', 'UsAnswerSurv']
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    text_cols = ["Sede", "OrgDefinedId", "Genero", "Grado", "Seccion", "SurveyName", "TexQuestion", "UsAnswerSurv"]
     for col in text_cols:
         df[col] = df[col].astype(str).str.strip()
-        df.loc[df[col].isin(['', 'nan', 'None']), col] = np.nan
-    df['Sede Corta'] = df['Sede'].map(socio_clean_sede_label)
-    df['Grado Orden'] = df['Grado'].map(lambda x: socio_grade_sort_key(x)[0])
-    df['Grado Etiqueta'] = df['Grado'].map(socio_grade_display_label)
-    df['Curso Orden'] = df['Seccion'].map(lambda x: socio_course_sort_key(x)[0])
-    df['Question Key'] = df['TexQuestion'].map(socio_normalize_text_key)
-    df['Answer Key'] = df['UsAnswerSurv'].map(socio_normalize_text_key)
-    specs = df.apply(lambda r: socio_get_socio_question_spec(r['TexQuestion'], r['SurveyName']), axis=1)
-    df['Indicador'] = specs.map(lambda x: x['indicator'] if x else np.nan)
-    df['Dimension'] = specs.map(lambda x: x['dimension'] if x else np.nan)
-    df['Escala'] = specs.map(lambda x: x['scale'] if x else np.nan)
-    df['Inversa'] = specs.map(lambda x: bool(x['reverse']) if x else False)
-    df['Respuesta Válida'] = df.apply(lambda r: bool(socio_get_socio_question_spec(r['TexQuestion'], r['SurveyName'])) and bool(r['Answer Key']), axis=1)
+        df.loc[df[col].isin(["", "nan", "None"]), col] = np.nan
+
+    df["Sede Corta"] = df["Sede"].map(socio_clean_sede_label)
+    df["Grado Orden"] = df["Grado"].map(lambda x: socio_grade_sort_key(x)[0])
+    df["Grado Etiqueta"] = df["Grado"].map(socio_grade_display_label)
+    df["Curso Orden"] = df["Seccion"].map(lambda x: socio_course_sort_key(x)[0])
+    df["Question Key"] = df["TexQuestion"].map(socio_normalize_text_key)
+    df["Answer Key"] = df["UsAnswerSurv"].map(socio_normalize_text_key)
+
+    specs = df.apply(lambda r: socio_get_socio_question_spec(r["TexQuestion"], r["SurveyName"]), axis=1)
+    df["Indicador"] = specs.map(lambda x: x["indicator"] if x else np.nan)
+    df["Dimension"] = specs.map(lambda x: x["dimension"] if x else np.nan)
+    df["Escala"] = specs.map(lambda x: x["scale"] if x else np.nan)
+    df["Inversa"] = specs.map(lambda x: bool(x["reverse"]) if x else False)
+    df["Respuesta Válida"] = df.apply(lambda r: bool(socio_get_socio_question_spec(r["TexQuestion"], r["SurveyName"])) and bool(r["Answer Key"]), axis=1)
 
     def _score_row(row: pd.Series) -> float:
-        spec = socio_get_socio_question_spec(row['TexQuestion'], row['SurveyName'])
+        spec = socio_get_socio_question_spec(row["TexQuestion"], row["SurveyName"])
         if not spec:
             return np.nan
-        return socio_ordinal_score(scale=spec['scale'], answer_key=row['Answer Key'], reverse=bool(spec['reverse']), expected_key=row['Question Key'])
+        return socio_ordinal_score(
+            scale=spec["scale"],
+            answer_key=row["Answer Key"],
+            reverse=bool(spec["reverse"]),
+            expected_key=row["Question Key"],
+        )
 
     def _fav_row(row: pd.Series) -> float:
-        spec = socio_get_socio_question_spec(row['TexQuestion'], row['SurveyName'])
+        spec = socio_get_socio_question_spec(row["TexQuestion"], row["SurveyName"])
         if not spec:
             return np.nan
-        return socio_favorable_topbox(scale=spec['scale'], answer_key=row['Answer Key'], reverse=bool(spec['reverse']), expected_key=row['Question Key'])
-    df['Puntaje Socio'] = df.apply(_score_row, axis=1)
-    df['Respuesta Favorable'] = df.apply(_fav_row, axis=1)
+        return socio_favorable_topbox(
+            scale=spec["scale"],
+            answer_key=row["Answer Key"],
+            reverse=bool(spec["reverse"]),
+            expected_key=row["Question Key"],
+        )
+
+    def _display_row(row: pd.Series):
+        spec = socio_get_socio_question_spec(row["TexQuestion"], row["SurveyName"])
+        if not spec:
+            return np.nan
+        return socio_report_answer_label(spec["scale"], row["Answer Key"], row["UsAnswerSurv"])
+
+    df["Puntaje Socio"] = df.apply(_score_row, axis=1)
+    df["Respuesta Favorable"] = df.apply(_fav_row, axis=1)
+    df["Respuesta Reporte"] = df.apply(_display_row, axis=1)
     return df
+
 
 def socio_safe_pct(series: pd.Series) -> float:
     clean = pd.Series(series).dropna().astype(float)
     return float(clean.mean()) if len(clean) else 0.0
 
+
 def socio_safe_nunique(series: pd.Series) -> int:
     clean = pd.Series(series).dropna()
     return int(clean.nunique()) if len(clean) else 0
 
-def socio_get_theme_tokens() -> dict:
-    base = (st.get_option('theme.base') or 'light').lower()
-    primary = st.get_option('theme.primaryColor') or ('#60a5fa' if base == 'dark' else '#2563eb')
-    text = st.get_option('theme.textColor') or ('#f8fafc' if base == 'dark' else '#0f172a')
-    return {'base': base, 'primary': primary, 'secondary': '#f59e0b' if base == 'dark' else '#d97706', 'text': text, 'muted': '#94a3b8' if base == 'dark' else '#64748b', 'grid': 'rgba(148,163,184,0.28)' if base == 'dark' else 'rgba(51,65,85,0.18)', 'success': '#22c55e' if base == 'dark' else '#15803d', 'warning': '#f59e0b' if base == 'dark' else '#b45309', 'danger': '#f87171' if base == 'dark' else '#dc2626', 'plotly_template': 'plotly_dark' if base == 'dark' else 'plotly_white', 'card_bg': 'rgba(30,41,59,0.32)' if base == 'dark' else 'rgba(248,250,252,0.96)', 'card_border': 'rgba(148,163,184,0.22)' if base == 'dark' else 'rgba(100,116,139,0.22)', 'heat_scale': [[0.0, '#7f1d1d' if base == 'dark' else '#fee2e2'], [0.5, '#d97706' if base == 'dark' else '#fde68a'], [1.0, '#16a34a' if base == 'dark' else '#15803d']]}
-
-def socio_apply_accessible_figure_style(fig: go.Figure, theme: dict) -> go.Figure:
-    fig.update_layout(template=theme['plotly_template'], paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color=theme['text']), legend=dict(font=dict(color=theme['text'])), margin=dict(l=20, r=20, t=60, b=20))
-    fig.update_xaxes(showgrid=False, tickfont=dict(color=theme['text']), title_font=dict(color=theme['text']), linecolor=theme['grid'])
-    fig.update_yaxes(gridcolor=theme['grid'], zerolinecolor=theme['grid'], tickfont=dict(color=theme['text']), title_font=dict(color=theme['text']))
-    return fig
-
-def socio_render_theme_metric_card(title: str, value: str, subtitle: str, theme: dict) -> None:
-    st.markdown(f"""\n        <div style="\n            background:{theme['card_bg']};\n            border:1px solid {theme['card_border']};\n            border-radius:14px;\n            padding:1rem 1.05rem;\n            min-height:118px;\n        ">\n            <div style="font-size:0.95rem; color:{theme['muted']}; margin-bottom:0.35rem;">\n                {title}\n            </div>\n            <div style="font-size:2rem; font-weight:700; color:{theme['text']}; line-height:1.1;">\n                {value}\n            </div>\n            <div style="font-size:0.9rem; color:{theme['muted']}; margin-top:0.35rem;">\n                {subtitle}\n            </div>\n        </div>\n        """, unsafe_allow_html=True)
 
 def socio_socio_benchmark(df: pd.DataFrame, focus_df: pd.DataFrame, dim: str) -> pd.DataFrame:
-    net = df.groupby(dim, dropna=False).agg(puntaje_red=('Puntaje Socio', 'mean'), favorable_red=('Respuesta Favorable', 'mean'), cobertura_red=('Respuesta Válida', 'mean'), estudiantes_red=('OrgDefinedId', pd.Series.nunique)).reset_index()
-    focus = focus_df.groupby(dim, dropna=False).agg(puntaje_sede=('Puntaje Socio', 'mean'), favorable_sede=('Respuesta Favorable', 'mean'), cobertura_sede=('Respuesta Válida', 'mean'), estudiantes_sede=('OrgDefinedId', pd.Series.nunique)).reset_index()
-    out = net.merge(focus, on=dim, how='left')
-    for col in ['favorable_red', 'favorable_sede', 'cobertura_red', 'cobertura_sede']:
+    net = (
+        df.groupby(dim, dropna=False)
+        .agg(
+            puntaje_red=("Puntaje Socio", "mean"),
+            favorable_red=("Respuesta Favorable", "mean"),
+            cobertura_red=("Respuesta Válida", "mean"),
+            estudiantes_red=("OrgDefinedId", pd.Series.nunique),
+        )
+        .reset_index()
+    )
+    focus = (
+        focus_df.groupby(dim, dropna=False)
+        .agg(
+            puntaje_sede=("Puntaje Socio", "mean"),
+            favorable_sede=("Respuesta Favorable", "mean"),
+            cobertura_sede=("Respuesta Válida", "mean"),
+            estudiantes_sede=("OrgDefinedId", pd.Series.nunique),
+        )
+        .reset_index()
+    )
+    out = net.merge(focus, on=dim, how="left")
+    for col in ["favorable_red", "favorable_sede", "cobertura_red", "cobertura_sede"]:
         out[col] = (out[col] * 100).round(2)
-    out['puntaje_red'] = out['puntaje_red'].round(2)
-    out['puntaje_sede'] = out['puntaje_sede'].round(2)
-    out['brecha_puntaje'] = (out['puntaje_sede'] - out['puntaje_red']).round(2)
+    out["puntaje_red"] = out["puntaje_red"].round(2)
+    out["puntaje_sede"] = out["puntaje_sede"].round(2)
+    out["brecha_puntaje"] = (out["puntaje_sede"] - out["puntaje_red"]).round(2)
     return out
+
 
 def socio_sort_socio_benchmark(df: pd.DataFrame, dim: str) -> pd.DataFrame:
     if df.empty:
         return df
     out = df.copy()
-    if dim == 'Indicador':
-        out['__orden__'] = out[dim].map(lambda x: socio_indicator_sort_key(x)[0])
-        out = out.sort_values(['__orden__', dim]).drop(columns='__orden__')
-    elif dim == 'Dimension':
-        out['__orden__'] = out[dim].map(lambda x: socio_dimension_sort_key(x)[0])
-        out = out.sort_values(['__orden__', dim]).drop(columns='__orden__')
-    elif dim == 'Grado':
-        out['__orden__'] = out[dim].map(lambda x: socio_grade_sort_key(x)[0])
-        out = out.sort_values(['__orden__', dim]).drop(columns='__orden__')
+    if dim == "Indicador":
+        out["__orden__"] = out[dim].map(lambda x: socio_indicator_sort_key(x)[0])
+        out = out.sort_values(["__orden__", dim]).drop(columns="__orden__")
+    elif dim == "Dimension":
+        out["__orden__"] = out[dim].map(lambda x: socio_dimension_sort_key(x)[0])
+        out = out.sort_values(["__orden__", dim]).drop(columns="__orden__")
+    elif dim == "Grado":
+        out["__orden__"] = out[dim].map(lambda x: socio_grade_sort_key(x)[0])
+        out = out.sort_values(["__orden__", dim]).drop(columns="__orden__")
     else:
         out = out.sort_values(dim)
     return out
 
+
 def socio_question_summary(df: pd.DataFrame, focus_df: pd.DataFrame) -> pd.DataFrame:
-    red = df.groupby(['SurveyName', 'Indicador', 'TexQuestion'], dropna=False).agg(puntaje_red=('Puntaje Socio', 'mean'), favorable_red=('Respuesta Favorable', 'mean'), cobertura_red=('Respuesta Válida', 'mean'), estudiantes_red=('OrgDefinedId', pd.Series.nunique)).reset_index()
-    focus = focus_df.groupby(['SurveyName', 'Indicador', 'TexQuestion'], dropna=False).agg(puntaje_sede=('Puntaje Socio', 'mean'), favorable_sede=('Respuesta Favorable', 'mean'), cobertura_sede=('Respuesta Válida', 'mean'), estudiantes_sede=('OrgDefinedId', pd.Series.nunique)).reset_index()
-    out = red.merge(focus, on=['SurveyName', 'Indicador', 'TexQuestion'], how='left')
-    for col in ['favorable_red', 'favorable_sede', 'cobertura_red', 'cobertura_sede']:
+    red = (
+        df.groupby(["SurveyName", "Indicador", "TexQuestion"], dropna=False)
+        .agg(
+            puntaje_red=("Puntaje Socio", "mean"),
+            favorable_red=("Respuesta Favorable", "mean"),
+            cobertura_red=("Respuesta Válida", "mean"),
+            estudiantes_red=("OrgDefinedId", pd.Series.nunique),
+        )
+        .reset_index()
+    )
+    focus = (
+        focus_df.groupby(["SurveyName", "Indicador", "TexQuestion"], dropna=False)
+        .agg(
+            puntaje_sede=("Puntaje Socio", "mean"),
+            favorable_sede=("Respuesta Favorable", "mean"),
+            cobertura_sede=("Respuesta Válida", "mean"),
+            estudiantes_sede=("OrgDefinedId", pd.Series.nunique),
+        )
+        .reset_index()
+    )
+    out = red.merge(focus, on=["SurveyName", "Indicador", "TexQuestion"], how="left")
+    for col in ["favorable_red", "favorable_sede", "cobertura_red", "cobertura_sede"]:
         out[col] = (out[col] * 100).round(2)
-    for col in ['puntaje_red', 'puntaje_sede']:
+    for col in ["puntaje_red", "puntaje_sede"]:
         out[col] = out[col].round(2)
-    out['brecha_puntaje'] = (out['puntaje_sede'] - out['puntaje_red']).round(2)
+    out["brecha_puntaje"] = (out["puntaje_sede"] - out["puntaje_red"]).round(2)
     return out
 
+
 def socio_response_profile(frame: pd.DataFrame, question: str) -> pd.DataFrame:
-    sub = frame[frame['TexQuestion'] == question].copy()
+    sub = frame[(frame["TexQuestion"] == question) & (frame["Respuesta Reporte"].notna())].copy()
     if sub.empty:
-        return pd.DataFrame(columns=['UsAnswerSurv', 'pct'])
-    out = sub.groupby('UsAnswerSurv', dropna=False).size().reset_index(name='n')
-    total = out['n'].sum()
-    out['pct'] = np.where(total > 0, out['n'] / total * 100, 0)
-    return out.sort_values('pct', ascending=False)
+        return pd.DataFrame(columns=["Respuesta Reporte", "pct"])
+    out = sub.groupby("Respuesta Reporte", dropna=False).size().reset_index(name="n")
+    total = out["n"].sum()
+    out["pct"] = np.where(total > 0, out["n"] / total * 100, 0)
+    return out.sort_values("pct", ascending=False)
 
-def socio_apply_socio_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
-    st.sidebar.header('Enfoque del tablero')
-    sedes_base = df[['Sede', 'Sede Corta']].dropna().drop_duplicates().sort_values('Sede Corta')
-    if sedes_base.empty:
-        return (df.iloc[0:0], df.iloc[0:0], 'Sin sede')
-    sede_labels = sedes_base['Sede Corta'].tolist()
-    label_to_sede = {row['Sede Corta']: row['Sede'] for _, row in sedes_base.iterrows()}
-    sede_focal_label = st.sidebar.selectbox('Sede focal', sede_labels, index=0)
-    surveys = sorted(df['SurveyName'].dropna().unique().tolist())
-    selected_surveys = st.sidebar.multiselect('Cuestionario', surveys, default=surveys)
-    grades = sorted(df['Grado'].dropna().unique().tolist(), key=socio_grade_sort_key)
-    selected_grades = st.sidebar.multiselect('Grado', grades, default=grades)
-    df_tmp = df[df['SurveyName'].isin(selected_surveys)].copy() if selected_surveys else df.iloc[0:0].copy()
-    df_tmp = df_tmp[df_tmp['Grado'].isin(selected_grades)].copy() if selected_grades else df_tmp.iloc[0:0].copy()
-    sections = sorted(df_tmp['Seccion'].dropna().unique().tolist(), key=socio_course_sort_key)
-    selected_sections = st.sidebar.multiselect('Curso', sections, default=sections)
-    genders = sorted(df_tmp['Genero'].dropna().unique().tolist())
-    selected_genders = st.sidebar.multiselect('Género', genders, default=genders)
-    filtered = df.copy()
-    filtered = filtered[filtered['SurveyName'].isin(selected_surveys)].copy() if selected_surveys else filtered.iloc[0:0].copy()
-    filtered = filtered[filtered['Grado'].isin(selected_grades)].copy() if selected_grades else filtered.iloc[0:0].copy()
-    filtered = filtered[filtered['Seccion'].isin(selected_sections)].copy() if selected_sections else filtered.iloc[0:0].copy()
-    filtered = filtered[filtered['Genero'].isin(selected_genders)].copy() if selected_genders else filtered.iloc[0:0].copy()
-    sede_value = label_to_sede[sede_focal_label]
-    focus_df = filtered[filtered['Sede'] == sede_value].copy()
-    return (filtered, focus_df, sede_focal_label)
 
-def socio_show_network_tab(df: pd.DataFrame) -> None:
-    theme = socio_get_theme_tokens()
-    st.subheader('Mapa general socioemocional')
-    st.caption('La lectura base es por tendencias de respuesta, no por aciertos. Aquí el foco es ver clima, recursos y percepciones del grupo.')
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        socio_render_theme_metric_card('Puntaje global', f"{socio_safe_pct(df['Puntaje Socio']):.1f}", 'Promedio ordinal 0-100', theme)
-    with c2:
-        socio_render_theme_metric_card('% favorable', f"{socio_safe_pct(df['Respuesta Favorable']) * 100:.1f}%", 'Top-box de respuestas', theme)
-    with c3:
-        socio_render_theme_metric_card('Cobertura válida', f"{socio_safe_pct(df['Respuesta Válida']) * 100:.1f}%", 'Preguntas con respuesta interpretable', theme)
-    with c4:
-        socio_render_theme_metric_card('Estudiantes únicos', f"{socio_safe_nunique(df['OrgDefinedId']):,}", 'Con filtros activos', theme)
-    by_indicator = df.groupby('Indicador', dropna=False).agg(Puntaje=('Puntaje Socio', 'mean'), Favorable=('Respuesta Favorable', 'mean'), Cobertura=('Respuesta Válida', 'mean')).reset_index()
-    by_indicator = socio_sort_socio_benchmark(by_indicator.rename(columns={'Indicador': 'Indicador'}), 'Indicador')
-    by_indicator['Favorable'] = by_indicator['Favorable'] * 100
-    by_indicator['Cobertura'] = by_indicator['Cobertura'] * 100
-    col1, col2 = st.columns(2)
-    with col1:
-        fig = px.bar(by_indicator, x='Indicador', y='Puntaje', text='Puntaje', title='Puntaje por indicador', color_discrete_sequence=[theme['primary']])
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        fig.update_layout(yaxis_title='Puntaje 0-100', xaxis_title='')
-        socio_apply_accessible_figure_style(fig, theme)
-        st.plotly_chart(fig, use_container_width=True)
-    with col2:
-        fig = px.bar(by_indicator, x='Indicador', y='Cobertura', text='Cobertura', title='Cobertura interpretable por indicador', color_discrete_sequence=[theme['secondary']])
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        fig.update_layout(yaxis_title='Cobertura %', xaxis_title='')
-        socio_apply_accessible_figure_style(fig, theme)
-        st.plotly_chart(fig, use_container_width=True)
-    heat = df.groupby(['Grado Etiqueta', 'Indicador'], dropna=False)['Puntaje Socio'].mean().reset_index().pivot(index='Grado Etiqueta', columns='Indicador', values='Puntaje Socio')
-    heat = heat.reindex(sorted(heat.index, key=socio_grade_sort_key), axis=0)
-    heat = heat.reindex(sorted(heat.columns, key=socio_indicator_sort_key), axis=1)
-    st.markdown('**Mapa de calor por grado e indicador**')
-    fig = px.imshow(heat, text_auto='.0f', aspect='auto', title='Tendencia socioemocional por grado', color_continuous_scale=theme['heat_scale'])
-    fig.update_layout(xaxis_title='Indicador', yaxis_title='Grado', coloraxis_colorbar_title='Puntaje')
-    socio_apply_accessible_figure_style(fig, theme)
-    st.plotly_chart(fig, use_container_width=True)
+def socio_yes_no_summary(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str, indicator: str) -> pd.DataFrame:
+    base = df[(df["Indicador"] == indicator) & (df["Escala"] == "yes_no") & (df["Respuesta Reporte"].isin(["Sí", "No"]))].copy()
+    focus = focus_df[(focus_df["Indicador"] == indicator) & (focus_df["Escala"] == "yes_no") & (focus_df["Respuesta Reporte"].isin(["Sí", "No"]))].copy()
+    other = base[base["Sede Corta"] != focus_label].copy()
 
-def socio_show_indicator_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str) -> None:
-    theme = socio_get_theme_tokens()
-    st.subheader('Tablero directivo socioemocional')
-    comp = socio_sort_socio_benchmark(socio_socio_benchmark(df, focus_df, 'Indicador'), 'Indicador')
-    if comp.empty:
-        st.info('No hay datos para esta vista.')
-        return
-    melted = comp.melt(id_vars='Indicador', value_vars=['puntaje_red', 'puntaje_sede'], var_name='Serie', value_name='Puntaje')
-    melted['Serie'] = melted['Serie'].map({'puntaje_red': 'Red', 'puntaje_sede': focus_label})
-    c1, c2 = st.columns(2)
-    with c1:
-        fig = px.bar(melted, x='Indicador', y='Puntaje', color='Serie', barmode='group', title=f'Puntaje por indicador: {focus_label} vs red', color_discrete_map={'Red': theme['muted'], focus_label: theme['primary']})
-        fig.update_layout(yaxis_title='Puntaje 0-100', xaxis_title='')
-        socio_apply_accessible_figure_style(fig, theme)
-        st.plotly_chart(fig, use_container_width=True)
-    with c2:
-        fig = px.bar(comp, x='Indicador', y='brecha_puntaje', text='brecha_puntaje', title=f'Brecha frente a la red: {focus_label}', color=comp['brecha_puntaje'].apply(lambda x: 'Por encima' if x >= 0 else 'Por debajo'), color_discrete_map={'Por encima': theme['success'], 'Por debajo': theme['danger']})
-        fig.add_hline(y=0, line_dash='dash', line_color=theme['muted'])
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        fig.update_layout(yaxis_title='Brecha de puntaje', xaxis_title='', showlegend=False)
-        socio_apply_accessible_figure_style(fig, theme)
-        st.plotly_chart(fig, use_container_width=True)
-    heat = df.groupby(['Sede Corta', 'Indicador'], dropna=False)['Puntaje Socio'].mean().reset_index().pivot(index='Sede Corta', columns='Indicador', values='Puntaje Socio')
-    heat = heat.reindex(sorted(heat.columns, key=socio_indicator_sort_key), axis=1)
-    st.markdown('**Mapa de calor por sede e indicador**')
-    fig = px.imshow(heat, text_auto='.0f', aspect='auto', title='Comparación de sedes por indicador', color_continuous_scale=theme['heat_scale'])
-    socio_apply_accessible_figure_style(fig, theme)
-    st.plotly_chart(fig, use_container_width=True)
-    weakest = comp.sort_values('brecha_puntaje').head(5)[['Indicador', 'puntaje_sede', 'puntaje_red', 'favorable_sede', 'cobertura_sede', 'brecha_puntaje']].rename(columns={'puntaje_sede': 'Puntaje sede', 'puntaje_red': 'Puntaje red', 'favorable_sede': '% favorable sede', 'cobertura_sede': '% cobertura sede', 'brecha_puntaje': 'Brecha'})
-    strongest = comp.sort_values('brecha_puntaje', ascending=False).head(5)[['Indicador', 'puntaje_sede', 'puntaje_red', 'favorable_sede', 'cobertura_sede', 'brecha_puntaje']].rename(columns={'puntaje_sede': 'Puntaje sede', 'puntaje_red': 'Puntaje red', 'favorable_sede': '% favorable sede', 'cobertura_sede': '% cobertura sede', 'brecha_puntaje': 'Brecha'})
-    st.markdown(f'**Indicadores donde {focus_label} necesita más atención**')
-    st.dataframe(weakest, use_container_width=True, hide_index=True)
-    st.markdown(f'**Indicadores donde {focus_label} está mejor posicionado**')
-    st.dataframe(strongest, use_container_width=True, hide_index=True)
+    focus_counts = (
+        focus.groupby(["TexQuestion", "Respuesta Reporte"], dropna=False)
+        .size()
+        .reset_index(name="Conteo sede")
+    )
+    other_counts = (
+        other.groupby(["TexQuestion", "Respuesta Reporte"], dropna=False)
+        .size()
+        .reset_index(name="Conteo demás sedes")
+    )
 
-def socio_show_questions_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str) -> None:
-    theme = socio_get_theme_tokens()
-    st.subheader('Preguntas concretas')
-    indicators = sorted(df['Indicador'].dropna().unique().tolist(), key=socio_indicator_sort_key)
-    if not indicators:
-        st.info('No hay preguntas mapeadas con el filtro actual.')
-        return
-    selected_indicator = st.selectbox('Indicador', indicators)
-    qsum = socio_question_summary(df[df['Indicador'] == selected_indicator], focus_df[focus_df['Indicador'] == selected_indicator])
-    if qsum.empty:
-        st.info('No hay preguntas para este indicador con los filtros actuales.')
-        return
-    qsum = qsum.sort_values(['cobertura_red', 'puntaje_red'], ascending=[True, False]).reset_index(drop=True)
-    st.markdown('**Resumen por pregunta**')
-    table_view = qsum.rename(columns={'TexQuestion': 'Pregunta', 'puntaje_red': 'Puntaje red', 'puntaje_sede': f'Puntaje {focus_label}', 'favorable_red': '% favorable red', 'favorable_sede': f'% favorable {focus_label}', 'cobertura_red': '% cobertura red', 'cobertura_sede': f'% cobertura {focus_label}', 'brecha_puntaje': 'Brecha'})
-    st.dataframe(table_view, use_container_width=True, hide_index=True, height=360)
-    questions = qsum['TexQuestion'].tolist()
-    selected_question = st.selectbox('Explorar pregunta', questions, format_func=lambda x: socio_wrap_plot_label(x, width=80, max_lines=2).replace('<br>', ' '))
-    row = qsum[qsum['TexQuestion'] == selected_question].iloc[0]
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric('Puntaje red', f"{row['puntaje_red']:.1f}")
-    m2.metric(f'Puntaje {focus_label}', f"{row['puntaje_sede']:.1f}" if pd.notna(row['puntaje_sede']) else 'Sin dato')
-    m3.metric('% favorable red', f"{row['favorable_red']:.1f}%")
-    m4.metric(f'% cobertura {focus_label}', f"{row['cobertura_sede']:.1f}%" if pd.notna(row['cobertura_sede']) else 'Sin dato')
-    st.markdown(f'**Pregunta:** {selected_question}')
-    red_prof = socio_response_profile(df, selected_question).rename(columns={'pct': 'Red'})
-    focus_prof = socio_response_profile(focus_df, selected_question).rename(columns={'pct': focus_label})
-    merged = red_prof.merge(focus_prof, on='UsAnswerSurv', how='outer').fillna(0)
-    merged['Etiqueta'] = merged['UsAnswerSurv'].map(lambda x: socio_wrap_plot_label(x, 24, 3))
-    merged['Pico'] = merged[['Red', focus_label]].max(axis=1)
-    merged = merged.sort_values('Pico', ascending=True)
-    fig = go.Figure()
-    fig.add_trace(go.Bar(y=merged['Etiqueta'], x=merged['Red'], name='Red', orientation='h', marker_color=theme['muted']))
-    fig.add_trace(go.Bar(y=merged['Etiqueta'], x=merged[focus_label], name=focus_label, orientation='h', marker_color=theme['primary']))
-    fig.update_layout(barmode='group', title='Distribución de respuestas', xaxis_title='% de estudiantes', yaxis_title='', height=max(380, 120 + 70 * len(merged)))
-    socio_apply_accessible_figure_style(fig, theme)
-    st.plotly_chart(fig, use_container_width=True)
-    display = merged[['UsAnswerSurv', 'Red', focus_label]].rename(columns={'UsAnswerSurv': 'Opción'})
-    st.dataframe(display, use_container_width=True, hide_index=True)
-    st.markdown('**Lectura sugerida**')
-    notes: list[str] = []
-    if row['cobertura_red'] < 80:
-        notes.append('La cobertura es baja. Antes de interpretar el indicador, revisa si hubo omisiones o un problema en la exportación.')
-    if pd.notna(row['puntaje_sede']) and row['puntaje_sede'] >= 75:
-        notes.append('La sede focal muestra una tendencia positiva en esta pregunta.')
-    elif pd.notna(row['puntaje_sede']) and row['puntaje_sede'] < 50:
-        notes.append('Esta pregunta sugiere una señal de alerta: conviene revisar acompañamiento, clima o recursos según el indicador.')
-    if pd.notna(row['brecha_puntaje']) and row['brecha_puntaje'] <= -10:
-        notes.append('La sede focal está claramente por debajo de la red en esta pregunta. Vale la pena priorizarla en el seguimiento.')
-    if not notes:
-        notes.append('La pregunta no muestra una alerta fuerte, pero sí sirve para monitoreo fino del grupo.')
-    for note in notes:
-        st.write(f'- {note}')
+    out = focus_counts.merge(other_counts, on=["TexQuestion", "Respuesta Reporte"], how="outer").fillna(0)
+    if out.empty:
+        return out
+    out["Conteo sede"] = out["Conteo sede"].astype(int)
+    out["Conteo demás sedes"] = out["Conteo demás sedes"].astype(int)
+    out["Pregunta"] = out["TexQuestion"].map(lambda x: shorten_text(x, 120))
+    return out[["Pregunta", "Respuesta Reporte", "Conteo sede", "Conteo demás sedes"]].sort_values(["Pregunta", "Respuesta Reporte"])
 
-def socio_show_quality_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str) -> None:
-    st.subheader('Calidad del dato y descargas')
-    qsum = socio_question_summary(df, focus_df)
-    low_cov = qsum[qsum['cobertura_red'] < 80].copy().sort_values('cobertura_red')
-    zero_cov = qsum[qsum['cobertura_red'] == 0].copy().sort_values(['SurveyName', 'Indicador', 'TexQuestion'])
-    ind = socio_sort_socio_benchmark(socio_socio_benchmark(df, focus_df, 'Indicador'), 'Indicador')
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown('**Preguntas con baja cobertura (< 80%)**')
-        st.dataframe(low_cov[['SurveyName', 'Indicador', 'TexQuestion', 'cobertura_red', 'puntaje_red', 'favorable_red']], use_container_width=True, hide_index=True, height=320)
-    with c2:
-        st.markdown('**Preguntas sin información interpretable**')
-        st.dataframe(zero_cov[['SurveyName', 'Indicador', 'TexQuestion', 'cobertura_red']], use_container_width=True, hide_index=True, height=320)
-    st.markdown('**Resumen por indicador**')
-    st.dataframe(ind, use_container_width=True, hide_index=True)
-    st.download_button('Descargar resumen por indicador', data=ind.to_csv(index=False).encode('utf-8-sig'), file_name='socio_resumen_indicador.csv', mime='text/csv')
-    st.download_button('Descargar resumen por pregunta', data=qsum.to_csv(index=False).encode('utf-8-sig'), file_name='socio_resumen_pregunta.csv', mime='text/csv')
-    st.markdown('**Aviso útil**')
-    st.write("Si ves indicadores completos con 0% de cobertura, el tablero los marcará como 'sin dato' y no como bajo desempeño. Eso evita castigar una sede por un problema de exportación o captura.")
 
+def socio_emotion_summary(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str) -> pd.DataFrame:
+    emotion_map = SOCIO_DISPLAY_MAPS["emotion"]
+    base = df[(df["Indicador"] == "Autoconciencia emocional") & (df["Escala"] == "emotion")].copy()
+    focus = focus_df[(focus_df["Indicador"] == "Autoconciencia emocional") & (focus_df["Escala"] == "emotion")].copy()
+    other = base[base["Sede Corta"] != focus_label].copy()
+
+    def _aggregate(frame: pd.DataFrame, prefix: str) -> pd.DataFrame:
+        if frame.empty:
+            return pd.DataFrame(columns=["Emoción", f"Aciertos {prefix}", f"Confusiones {prefix}", f"% acierto {prefix}"])
+        tmp = frame.copy()
+        tmp["Emoción"] = tmp["Question Key"].map(lambda x: emotion_map.get(x, str(x).title()))
+        tmp["Es acierto"] = tmp["Answer Key"] == tmp["Question Key"]
+        tmp = tmp[tmp["Answer Key"].isin(set(emotion_map.keys()))].copy()
+        out = (
+            tmp.groupby("Emoción", dropna=False)
+            .agg(
+                total=("Es acierto", "size"),
+                aciertos=("Es acierto", "sum"),
+            )
+            .reset_index()
+        )
+        out[f"Aciertos {prefix}"] = out["aciertos"].astype(int)
+        out[f"Confusiones {prefix}"] = (out["total"] - out["aciertos"]).astype(int)
+        out[f"% acierto {prefix}"] = np.where(out["total"] > 0, out["aciertos"] / out["total"] * 100, 0).round(2)
+        return out[["Emoción", f"Aciertos {prefix}", f"Confusiones {prefix}", f"% acierto {prefix}"]]
+
+    focus_out = _aggregate(focus, "sede")
+    other_out = _aggregate(other, "demás sedes")
+    out = focus_out.merge(other_out, on="Emoción", how="outer").fillna(0)
+    if out.empty:
+        return out
+    numeric_cols = [c for c in out.columns if c != "Emoción"]
+    for col in numeric_cols:
+        if "% acierto" not in col:
+            out[col] = out[col].astype(int)
+    order = ["Alegría", "Rabia", "Tristeza", "Sorpresa"]
+    out["__orden__"] = out["Emoción"].map(lambda x: order.index(x) if x in order else 999)
+    return out.sort_values(["__orden__", "Emoción"]).drop(columns="__orden__")
+
+
+def socio_emotion_confusion_matrix(frame: pd.DataFrame) -> pd.DataFrame:
+    emotion_map = SOCIO_DISPLAY_MAPS["emotion"]
+    sub = frame[(frame["Indicador"] == "Autoconciencia emocional") & (frame["Escala"] == "emotion")].copy()
+    sub = sub[sub["Question Key"].isin(set(emotion_map.keys())) & sub["Answer Key"].isin(set(emotion_map.keys()))].copy()
+    if sub.empty:
+        return pd.DataFrame()
+    sub["Emoción objetivo"] = sub["Question Key"].map(emotion_map)
+    sub["Respuesta elegida"] = sub["Answer Key"].map(emotion_map)
+    out = (
+        sub.groupby(["Emoción objetivo", "Respuesta elegida"], dropna=False)
+        .size()
+        .reset_index(name="Conteo")
+        .pivot(index="Emoción objetivo", columns="Respuesta elegida", values="Conteo")
+        .fillna(0)
+    )
+    return out.astype(int)
+
+
+# =========================
+# ACADÉMICO
+# =========================
 
 REQUIRED_COLUMNS = [
     "Sede", "ID Estudiante", "Edad Estudiante", "Genero", "Grado", "Curso",
     "Antiguedad", "Prueba", "Acierto", "QuestionId", "Pregunta",
-    "AnswerId", "Respuesta", "Competencia"
+    "AnswerId", "Respuesta", "Competencia",
 ]
-
 COLUMN_ALIASES = {
     "género": "Genero",
     "genero": "Genero",
@@ -543,7 +699,6 @@ COLUMN_ALIASES = {
     "questionid": "QuestionId",
     "answerid": "AnswerId",
 }
-
 BASE_DIR = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
 DEFAULT_DATA_CANDIDATES = [
     BASE_DIR / "data" / "EvaluarParaAvanzar_CalA.xlsx",
@@ -551,52 +706,22 @@ DEFAULT_DATA_CANDIDATES = [
     Path("data") / "EvaluarParaAvanzar_CalA.xlsx",
     Path("EvaluarParaAvanzar_CalA.xlsx"),
 ]
-
 GRADE_ORDER = {
-    "tercero": 3,
-    "cuarto": 4,
-    "quinto": 5,
-    "sexto": 6,
-    "septimo": 7,
-    "séptimo": 7,
-    "octavo": 8,
-    "noveno": 9,
-    "decimo": 10,
-    "décimo": 10,
-    "undecimo": 11,
-    "undécimo": 11,
-    "primero": 101,
-    "segundo": 102,
-    "transicion": 103,
-    "transición": 103,
-    "jardin": 104,
-    "jardín": 104,
-    "prejardin": 105,
-    "pre jardín": 105,
-    "prejardín": 105,
+    "tercero": 3, "cuarto": 4, "quinto": 5, "sexto": 6, "septimo": 7, "séptimo": 7,
+    "octavo": 8, "noveno": 9, "decimo": 10, "décimo": 10, "undecimo": 11, "undécimo": 11,
+    "primero": 101, "segundo": 102, "transicion": 103, "transición": 103,
+    "jardin": 104, "jardín": 104, "prejardin": 105, "pre jardín": 105, "prejardín": 105,
 }
-
 COMPETENCY_ORDER = [
-    "Conocimientos",
-    "Pensamiento Social",
-    "Argumentación en contextos ciudadanos",
-    "Multiperspectivismo",
-    "pensamiento sistémico",
-    "Pensamiento Reflexivo y Sistémico",
-    "Interpretación y Análisis de Perspectivas",
-    "Explicación de fenómenos",
-    "Indagación",
-    "Conocimiento científico",
-    "Interpretación y representación",
-    "Formulación y ejecución",
-    "Razonamiento",
-    "Comunicación",
-    "Resolución de problemas",
-    "Argumentación",
+    "Conocimientos", "Pensamiento Social", "Argumentación en contextos ciudadanos",
+    "Multiperspectivismo", "pensamiento sistémico", "Pensamiento Reflexivo y Sistémico",
+    "Interpretación y Análisis de Perspectivas", "Explicación de fenómenos", "Indagación",
+    "Conocimiento científico", "Interpretación y representación", "Formulación y ejecución",
+    "Razonamiento", "Comunicación", "Resolución de problemas", "Argumentación",
 ]
-
 P_BIS_TARGET = 0.20
 D27_TARGET = 0.20
+ENGLISH_LEVEL_ORDER = ["Pre A1", "A1", "A2", "B1"]
 
 
 def strip_accents(text: str) -> str:
@@ -624,9 +749,9 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     for col in df.columns:
         c = str(col).strip()
         cols.append(COLUMN_ALIASES.get(c.lower(), c))
-    df = df.copy()
-    df.columns = cols
-    return df
+    out = df.copy()
+    out.columns = cols
+    return out
 
 
 def grade_sort_key(value: str) -> tuple[int, str]:
@@ -636,9 +761,9 @@ def grade_sort_key(value: str) -> tuple[int, str]:
     normalized = strip_accents(raw).lower()
     if normalized in GRADE_ORDER:
         return (GRADE_ORDER[normalized], raw)
-    num_match = re.search(r"(\d+)", normalized)
-    if num_match:
-        return (int(num_match.group(1)), raw)
+    m = re.search(r"(\d+)", normalized)
+    if m:
+        return (int(m.group(1)), raw)
     return (999, raw)
 
 
@@ -658,9 +783,9 @@ def grade_display_label(value: str) -> str:
         grade_num = GRADE_ORDER[normalized]
         if grade_num < 100:
             return f"{grade_num}°"
-    num_match = re.search(r"(\d+)", normalized)
-    if num_match:
-        return f"{int(num_match.group(1))}°"
+    m = re.search(r"(\d+)", normalized)
+    if m:
+        return f"{int(m.group(1))}°"
     return raw
 
 
@@ -677,12 +802,7 @@ def wrap_plot_label(value: str, width: int = 42, max_lines: int = 4) -> str:
     raw = re.sub(r"\s+", " ", raw)
     if not raw:
         return ""
-    lines = textwrap.wrap(
-        raw,
-        width=width,
-        break_long_words=False,
-        break_on_hyphens=False,
-    )
+    lines = textwrap.wrap(raw, width=width, break_long_words=False, break_on_hyphens=False)
     if max_lines and len(lines) > max_lines:
         lines = lines[:max_lines]
         lines[-1] = lines[-1].rstrip(" .,;:") + "…"
@@ -709,6 +829,25 @@ def clean_prueba_label(value: str) -> str:
     return cleaned or raw
 
 
+def is_english_prueba(value: str) -> bool:
+    key = strip_accents(str(value)).lower()
+    return ("ingles" in key) or ("english" in key)
+
+
+def extract_english_level(*values) -> str | float:
+    text = " ".join(strip_accents(str(v)).lower() for v in values if pd.notna(v))
+    text = re.sub(r"\s+", " ", text)
+    if re.search(r"\bpre\s*a1\b", text) or re.search(r"\bprea1\b", text):
+        return "Pre A1"
+    if re.search(r"\bb1\b", text):
+        return "B1"
+    if re.search(r"\ba2\b", text):
+        return "A2"
+    if re.search(r"\ba1\b", text):
+        return "A1"
+    return np.nan
+
+
 def load_default_file_if_exists() -> Path | None:
     for path in DEFAULT_DATA_CANDIDATES:
         if path.exists():
@@ -730,26 +869,6 @@ def read_dataframe_from_path(path_str: str, file_version: int) -> pd.DataFrame:
                 return pd.read_csv(path, sep=None, engine="python")
     if suffix in [".xlsx", ".xls"]:
         return pd.read_excel(path)
-    raise ValueError("Formato no soportado. Usa CSV o Excel.")
-
-
-@st.cache_data(show_spinner=False)
-def read_uploaded_file(uploaded_file) -> pd.DataFrame:
-    name = uploaded_file.name.lower()
-    if name.endswith(".csv"):
-        uploaded_file.seek(0)
-        try:
-            return pd.read_csv(uploaded_file, encoding="utf-8-sig")
-        except Exception:
-            uploaded_file.seek(0)
-            try:
-                return pd.read_csv(uploaded_file, encoding="latin1")
-            except Exception:
-                uploaded_file.seek(0)
-                return pd.read_csv(uploaded_file, sep=None, engine="python")
-    if name.endswith(".xlsx") or name.endswith(".xls"):
-        uploaded_file.seek(0)
-        return pd.read_excel(uploaded_file)
     raise ValueError("Formato no soportado. Usa CSV o Excel.")
 
 
@@ -777,7 +896,10 @@ def prepare_data(raw: pd.DataFrame) -> pd.DataFrame:
     df["Sede Corta"] = df["Sede"].map(clean_sede_label)
     df["Grado Orden"] = df["Grado"].map(lambda x: grade_sort_key(x)[0])
     df["Curso Orden"] = df["Curso"].map(lambda x: course_sort_key(x)[0])
-
+    df["Nivel Inglés"] = df.apply(
+        lambda r: extract_english_level(r.get("Competencia"), r.get("Pregunta"), r.get("Prueba")) if is_english_prueba(r.get("Prueba Base")) else np.nan,
+        axis=1,
+    )
     return df
 
 
@@ -787,7 +909,7 @@ def add_benchmark(df: pd.DataFrame, focus_df: pd.DataFrame, dim: str) -> pd.Data
         .agg(
             acierto_red=("Acierto", "mean"),
             estudiantes_red=("ID Estudiante", "nunique"),
-            respuestas_red=("Acierto", "size")
+            respuestas_red=("Acierto", "size"),
         )
         .reset_index()
     )
@@ -796,7 +918,7 @@ def add_benchmark(df: pd.DataFrame, focus_df: pd.DataFrame, dim: str) -> pd.Data
         .agg(
             acierto_sede=("Acierto", "mean"),
             estudiantes_sede=("ID Estudiante", "nunique"),
-            respuestas_sede=("Acierto", "size")
+            respuestas_sede=("Acierto", "size"),
         )
         .reset_index()
     )
@@ -850,7 +972,6 @@ def get_theme_tokens() -> dict:
     text = st.get_option("theme.textColor") or ("#f8fafc" if base == "dark" else "#0f172a")
     background = st.get_option("theme.backgroundColor") or ("#0e1117" if base == "dark" else "#ffffff")
     secondary_bg = st.get_option("theme.secondaryBackgroundColor") or ("#1f2937" if base == "dark" else "#f8fafc")
-
     return {
         "base": base,
         "primary": primary,
@@ -898,18 +1019,8 @@ def apply_accessible_figure_style(fig: go.Figure, theme: dict) -> go.Figure:
         legend=dict(font=dict(color=theme["text"])),
         margin=dict(l=20, r=20, t=60, b=20),
     )
-    fig.update_xaxes(
-        showgrid=False,
-        tickfont=dict(color=theme["text"]),
-        title_font=dict(color=theme["text"]),
-        linecolor=theme["grid"],
-    )
-    fig.update_yaxes(
-        gridcolor=theme["grid"],
-        zerolinecolor=theme["grid"],
-        tickfont=dict(color=theme["text"]),
-        title_font=dict(color=theme["text"]),
-    )
+    fig.update_xaxes(showgrid=False, tickfont=dict(color=theme["text"]), title_font=dict(color=theme["text"]), linecolor=theme["grid"])
+    fig.update_yaxes(gridcolor=theme["grid"], zerolinecolor=theme["grid"], tickfont=dict(color=theme["text"]), title_font=dict(color=theme["text"]))
     return fig
 
 
@@ -923,15 +1034,9 @@ def render_theme_metric_card(title: str, value: str, subtitle: str, theme: dict)
             padding:1rem 1.05rem;
             min-height:118px;
         ">
-            <div style="font-size:0.95rem; color:{theme['muted']}; margin-bottom:0.35rem;">
-                {title}
-            </div>
-            <div style="font-size:2rem; font-weight:700; color:{theme['text']}; line-height:1.1;">
-                {value}
-            </div>
-            <div style="font-size:0.9rem; color:{theme['muted']}; margin-top:0.35rem;">
-                {subtitle}
-            </div>
+            <div style="font-size:0.95rem; color:{theme['muted']}; margin-bottom:0.35rem;">{title}</div>
+            <div style="font-size:2rem; font-weight:700; color:{theme['text']}; line-height:1.1;">{value}</div>
+            <div style="font-size:0.9rem; color:{theme['muted']}; margin-top:0.35rem;">{subtitle}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -994,11 +1099,10 @@ def item_metrics(df_scope: pd.DataFrame) -> pd.DataFrame:
             return np.nan
         return x.corr(y)
 
-    pb = (
-        merged.groupby("QuestionId", dropna=False)
-        .apply(pbis, include_groups=False)
-        .reset_index(name="p_bis")
-    )
+    try:
+        pb = merged.groupby("QuestionId", dropna=False).apply(pbis, include_groups=False).reset_index(name="p_bis")
+    except TypeError:
+        pb = merged.groupby("QuestionId", dropna=False).apply(pbis).reset_index(name="p_bis")
 
     options = (
         merged.groupby(["QuestionId", "Respuesta Limpia", "Acierto"], dropna=False)
@@ -1054,30 +1158,6 @@ def item_metrics(df_scope: pd.DataFrame) -> pd.DataFrame:
     out["pct_distractor_top"] = (out["pct_distractor_top"] * 100).round(2)
     out["pct_correcta"] = (out["pct_correcta"] * 100).round(2)
 
-    def difficulty_band(p: float) -> str:
-        if pd.isna(p):
-            return "Sin dato"
-        if p < 0.30:
-            return "Muy difícil"
-        if p < 0.50:
-            return "Difícil"
-        if p < 0.80:
-            return "Adecuada"
-        return "Muy fácil"
-
-    def discrim_band(v: float) -> str:
-        if pd.isna(v):
-            return "Sin dato"
-        if v < 0:
-            return "Negativa"
-        if v < 0.10:
-            return "Muy baja"
-        if v < 0.20:
-            return "Baja"
-        if v < 0.30:
-            return "Media"
-        return "Alta"
-
     def item_flag(row: pd.Series) -> str:
         p = row["dificultad"]
         pbv = row["p_bis"]
@@ -1094,32 +1174,8 @@ def item_metrics(df_scope: pd.DataFrame) -> pd.DataFrame:
             return "Buen ítem"
         return "Revisar"
 
-    out["dificultad_nivel"] = out["dificultad"].map(difficulty_band)
-    out["discriminacion_nivel"] = out["p_bis"].map(discrim_band)
     out["estado_item"] = out.apply(item_flag, axis=1)
-
     return out.sort_values(["Prueba Base", "Grado Orden", "dificultad", "p_bis"], ascending=[True, True, True, False])
-
-
-def psychometric_summary(item_df: pd.DataFrame) -> dict:
-    if item_df.empty:
-        return {
-            "n_items": 0,
-            "pct_target_difficulty": 0.0,
-            "pct_good_discrimination": 0.0,
-            "pct_alert": 0.0,
-        }
-
-    target_difficulty = item_df["dificultad"].between(0.30, 0.80, inclusive="both")
-    good_disc = (item_df["p_bis"] >= P_BIS_TARGET) | (item_df["d27"] >= D27_TARGET)
-    alert = item_df["estado_item"].isin(["Alerta psicométrica", "Posible ítem muy complejo o ambiguo"])
-
-    return {
-        "n_items": int(len(item_df)),
-        "pct_target_difficulty": float(target_difficulty.mean() * 100),
-        "pct_good_discrimination": float(good_disc.mean() * 100),
-        "pct_alert": float(alert.mean() * 100),
-    }
 
 
 def make_compact_gauge(value: float) -> go.Figure:
@@ -1131,11 +1187,7 @@ def make_compact_gauge(value: float) -> go.Figure:
             value=gauge_value,
             number={"suffix": "%", "font": {"size": 20, "color": theme["text"]}},
             gauge={
-                "axis": {
-                    "range": [0, 100],
-                    "tickvals": [0, 25, 50, 75, 100],
-                    "tickfont": {"size": 10, "color": theme["muted"]},
-                },
+                "axis": {"range": [0, 100], "tickvals": [0, 25, 50, 75, 100], "tickfont": {"size": 10, "color": theme["muted"]}},
                 "bar": {"color": theme["success"], "thickness": 0.30},
                 "bgcolor": "rgba(0,0,0,0)",
                 "borderwidth": 0,
@@ -1143,18 +1195,12 @@ def make_compact_gauge(value: float) -> go.Figure:
             },
         )
     )
-    fig.update_layout(
-        height=165,
-        margin=dict(l=6, r=6, t=6, b=0),
-        paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=theme["text"]),
-    )
+    fig.update_layout(height=165, margin=dict(l=6, r=6, t=6, b=0), paper_bgcolor="rgba(0,0,0,0)", font=dict(color=theme["text"]))
     return fig
 
 
 def render_kpi_block(title: str, main_text: str, gauge_value: float, chip_text: str | None = None, chip_positive: bool = True) -> None:
     theme = get_theme_tokens()
-
     chip_html = ""
     if chip_text:
         chip_bg = "rgba(22, 163, 74, 0.18)" if chip_positive else "rgba(220, 38, 38, 0.18)"
@@ -1164,7 +1210,6 @@ def render_kpi_block(title: str, main_text: str, gauge_value: float, chip_text: 
             {chip_text}
         </div>
         """
-
     st.markdown(
         f"""
         <div style="
@@ -1184,28 +1229,7 @@ def render_kpi_block(title: str, main_text: str, gauge_value: float, chip_text: 
     st.plotly_chart(make_compact_gauge(gauge_value), use_container_width=True, config={"displayModeBar": False})
 
 
-def make_indicator(title: str, value: float, delta: float | None = None, suffix: str = "%", reference: float | None = None) -> go.Figure:
-    theme = get_theme_tokens()
-    fig = go.Figure()
-    indicator_kwargs = dict(
-        mode="number+gauge" if delta is None else "number+delta+gauge",
-        value=float(value),
-        title={"text": title, "font": {"size": 18, "color": theme["text"]}},
-        number={"suffix": suffix, "font": {"color": theme["text"]}},
-        gauge={
-            "axis": {"range": [0, 100], "tickfont": {"color": theme["muted"]}},
-            "bar": {"thickness": 0.35, "color": theme["primary"]},
-            "steps": theme["gauge_steps"],
-        },
-    )
-    if delta is not None:
-        indicator_kwargs["delta"] = {"reference": float(reference if reference is not None else value - delta), "valueformat": ".2f"}
-    fig.add_trace(go.Indicator(**indicator_kwargs))
-    fig.update_layout(height=220, margin=dict(l=18, r=18, t=55, b=10), paper_bgcolor="rgba(0,0,0,0)")
-    return fig
-
-
-def benchmark_cards(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
+def benchmark_cards(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str) -> None:
     colombia_pct = safe_pct(df["Acierto"])
     focus_pct = safe_pct(focus_df["Acierto"])
     brecha = focus_pct - colombia_pct
@@ -1228,52 +1252,22 @@ def benchmark_cards(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
     with c1:
         render_kpi_block("Promedio Colombia", f"{colombia_pct:.1f}%", colombia_pct)
     with c2:
-        render_kpi_block(
-            f"Promedio {focus_label}",
-            f"{focus_pct:.1f}%",
-            focus_pct,
-            chip_text=f"{brecha:+.2f} pp",
-            chip_positive=brecha >= 0,
-        )
+        render_kpi_block(f"Promedio {focus_label}", f"{focus_pct:.1f}%", focus_pct, chip_text=f"{brecha:+.2f} pp", chip_positive=brecha >= 0)
     with c3:
-        render_kpi_block(
-            "Prueba con mayor rendimiento",
-            str(prueba_destacada),
-            prueba_destacada_pct,
-            chip_text=f"{prueba_destacada_pct:.1f}%",
-            chip_positive=True,
-        )
+        render_kpi_block("Prueba con mayor rendimiento", str(prueba_destacada), prueba_destacada_pct, chip_text=f"{prueba_destacada_pct:.1f}%", chip_positive=True)
     with c4:
-        render_kpi_block(
-            "Prueba con menor rendimiento",
-            str(prueba_critica),
-            prueba_critica_pct,
-            chip_text=f"{prueba_critica_pct:.1f}%",
-            chip_positive=prueba_critica_pct >= colombia_pct,
-        )
+        render_kpi_block("Prueba con menor rendimiento", str(prueba_critica), prueba_critica_pct, chip_text=f"{prueba_critica_pct:.1f}%", chip_positive=prueba_critica_pct >= colombia_pct)
 
 
-def render_radar_cards(df: pd.DataFrame):
+def render_radar_cards(df: pd.DataFrame) -> None:
     theme = get_theme_tokens()
-
-    sedes = (
-        df[["Sede", "Sede Corta"]]
-        .dropna()
-        .drop_duplicates()
-        .sort_values("Sede Corta")
-    )
+    sedes = df[["Sede", "Sede Corta"]].dropna().drop_duplicates().sort_values("Sede Corta")
     pruebas = sorted(df["Prueba Base"].dropna().unique().tolist())
     if sedes.empty or not pruebas:
         st.info("No hay suficientes datos para construir perfiles por sede.")
         return
 
-    colombia = (
-        df.groupby("Prueba Base", dropna=False)["Acierto"]
-        .mean()
-        .mul(100)
-        .reindex(pruebas)
-        .fillna(0)
-    )
+    colombia = df.groupby("Prueba Base", dropna=False)["Acierto"].mean().mul(100).reindex(pruebas).fillna(0)
     radar_cols = st.columns(2)
 
     for idx, (_, row) in enumerate(sedes.iterrows()):
@@ -1312,16 +1306,8 @@ def render_radar_cards(df: pd.DataFrame):
             title=f"Perfil de {sede_label} frente a Colombia",
             polar=dict(
                 bgcolor="rgba(0,0,0,0)",
-                radialaxis=dict(
-                    range=[30, 100],
-                    tickvals=[30, 40, 50, 60, 70, 80, 90, 100],
-                    tickfont=dict(size=10, color=theme["text"]),
-                    gridcolor=theme["grid"],
-                    linecolor=theme["grid"],
-                ),
-                angularaxis=dict(
-                    tickfont=dict(color=theme["text"])
-                ),
+                radialaxis=dict(range=[30, 100], tickvals=[30, 40, 50, 60, 70, 80, 90, 100], tickfont=dict(size=10, color=theme["text"]), gridcolor=theme["grid"], linecolor=theme["grid"]),
+                angularaxis=dict(tickfont=dict(color=theme["text"])),
             ),
             showlegend=True,
             height=380,
@@ -1329,21 +1315,18 @@ def render_radar_cards(df: pd.DataFrame):
         )
         with radar_cols[idx % 2]:
             st.plotly_chart(fig, use_container_width=True)
-
         if idx % 2 == 1 and idx + 1 < len(sedes):
             radar_cols = st.columns(2)
 
 
-def show_network_map_tab(df: pd.DataFrame):
+def show_network_map_tab(df: pd.DataFrame) -> None:
     st.subheader("Mapa general de la red")
     st.caption("Vista inicial para entender el rendimiento global, por prueba y por grado, antes de entrar al detalle por sede.")
-
     if df.empty:
         st.info("No hay datos para construir el mapa general.")
         return
 
     theme = get_theme_tokens()
-
     global_pct = safe_pct(df["Acierto"])
     total_students = safe_nunique(df["ID Estudiante"])
     total_sedes = safe_nunique(df["Sede"])
@@ -1375,110 +1358,42 @@ def show_network_map_tab(df: pd.DataFrame):
     heat_df["orden"] = heat_df["Grado"].map(lambda x: grade_sort_key(x)[0])
     heat_df["Grado Etiqueta"] = heat_df["Grado"].map(grade_display_label)
     heat_df = heat_df.sort_values(["orden", "Grado Etiqueta", "Prueba Base"])
-
     heat = heat_df.pivot(index="Grado Etiqueta", columns="Prueba Base", values="Rendimiento")
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        render_theme_metric_card(
-            "Rendimiento global",
-            f"{global_pct:.1f}%",
-            "Promedio de aciertos de toda la red",
-            theme,
-        )
+        render_theme_metric_card("Rendimiento global", f"{global_pct:.1f}%", "Promedio de aciertos de toda la red", theme)
     with c2:
-        render_theme_metric_card(
-            "Estudiantes únicos",
-            f"{total_students:,}",
-            "Incluye los filtros activos",
-            theme,
-        )
+        render_theme_metric_card("Estudiantes únicos", f"{total_students:,}", "Incluye los filtros activos", theme)
     with c3:
-        render_theme_metric_card(
-            "Sedes incluidas",
-            f"{total_sedes:,}",
-            "Cobertura de la red en esta vista",
-            theme,
-        )
+        render_theme_metric_card("Sedes incluidas", f"{total_sedes:,}", "Cobertura de la red en esta vista", theme)
 
     col1, col2 = st.columns(2)
-
     with col1:
-        fig = px.bar(
-            by_prueba,
-            x="Prueba Base",
-            y="Rendimiento",
-            text="Rendimiento",
-            title="Rendimiento por prueba",
-            color_discrete_sequence=[theme["primary"]],
-        )
-        fig.add_hline(
-            y=global_pct,
-            line_dash="dash",
-            line_color=theme["muted"],
-            annotation_text="Promedio global",
-            annotation_font_color=theme["text"],
-            annotation_position="top left",
-        )
+        fig = px.bar(by_prueba, x="Prueba Base", y="Rendimiento", text="Rendimiento", title="Rendimiento por prueba", color_discrete_sequence=[theme["primary"]])
+        fig.add_hline(y=global_pct, line_dash="dash", line_color=theme["muted"], annotation_text="Promedio global", annotation_font_color=theme["text"], annotation_position="top left")
         fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-        fig.update_layout(
-            yaxis_title="% de rendimiento",
-            xaxis_title="",
-            yaxis_range=compute_axis_bounds(by_prueba["Rendimiento"]),
-            showlegend=False,
-        )
+        fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="", yaxis_range=compute_axis_bounds(by_prueba["Rendimiento"]), showlegend=False)
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
     with col2:
-        fig = px.line(
-            by_grade,
-            x="Grado Etiqueta",
-            y="Rendimiento",
-            markers=True,
-            title="Rendimiento por grado",
-        )
-        fig.update_traces(
-            line=dict(color=theme["success"], width=3),
-            marker=dict(color=theme["success"], size=9),
-        )
-        fig.add_hline(
-            y=global_pct,
-            line_dash="dash",
-            line_color=theme["muted"],
-            annotation_text="Promedio global",
-            annotation_font_color=theme["text"],
-            annotation_position="top left",
-        )
-        fig.update_layout(
-            yaxis_title="% de rendimiento",
-            xaxis_title="",
-            yaxis_range=compute_axis_bounds(by_grade["Rendimiento"]),
-            showlegend=False,
-        )
+        fig = px.line(by_grade, x="Grado Etiqueta", y="Rendimiento", markers=True, title="Rendimiento por grado")
+        fig.update_traces(line=dict(color=theme["success"], width=3), marker=dict(color=theme["success"], size=9))
+        fig.add_hline(y=global_pct, line_dash="dash", line_color=theme["muted"], annotation_text="Promedio global", annotation_font_color=theme["text"], annotation_position="top left")
+        fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="", yaxis_range=compute_axis_bounds(by_grade["Rendimiento"]), showlegend=False)
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Mapa cruzado de grado por prueba**")
-    fig = px.imshow(
-        heat,
-        text_auto=".1f",
-        aspect="auto",
-        color_continuous_scale=theme["heat_scale"],
-        title="Mapa general de rendimiento de la red",
-    )
-    fig.update_layout(
-        xaxis_title="Prueba",
-        yaxis_title="Grado",
-        coloraxis_colorbar_title="%"
-    )
+    fig = px.imshow(heat, text_auto=".1f", aspect="auto", color_continuous_scale=theme["heat_scale"], title="Mapa general de rendimiento de la red")
+    fig.update_layout(xaxis_title="Prueba", yaxis_title="Grado", coloraxis_colorbar_title="%")
     apply_accessible_figure_style(fig, theme)
     st.plotly_chart(fig, use_container_width=True)
 
 
-def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
+def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str) -> None:
     theme = get_theme_tokens()
-
     st.subheader("Resultados globales")
 
     with st.expander("Cómo leer esta pestaña", expanded=False):
@@ -1514,14 +1429,7 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
             color_discrete_map={focus_label: theme["primary"], "Otras sedes": theme["muted"]},
         )
         promedio_colombia = safe_pct(df["Acierto"])
-        fig.add_hline(
-            y=promedio_colombia,
-            line_dash="dash",
-            line_color=theme["secondary"],
-            annotation_text="Promedio Colombia",
-            annotation_font_color=theme["text"],
-            annotation_position="top left"
-        )
+        fig.add_hline(y=promedio_colombia, line_dash="dash", line_color=theme["secondary"], annotation_text="Promedio Colombia", annotation_font_color=theme["text"], annotation_position="top left")
         y_range = compute_axis_bounds(by_sede["acierto_colombia_pct"])
         if promedio_colombia > y_range[1]:
             y_range[1] = min(100.0, float(np.ceil(promedio_colombia + 3)))
@@ -1532,25 +1440,9 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
 
     with c2:
         by_prueba = add_benchmark(df, focus_df, "Prueba Base").sort_values("acierto_red_pct", ascending=False)
-        melted = by_prueba.melt(
-            id_vars="Prueba Base",
-            value_vars=["acierto_red_pct", "acierto_sede_pct"],
-            var_name="Serie",
-            value_name="Porcentaje"
-        )
-        melted["Serie"] = melted["Serie"].map({
-            "acierto_red_pct": "Colombia",
-            "acierto_sede_pct": focus_label,
-        })
-        fig = px.line(
-            melted,
-            x="Prueba Base",
-            y="Porcentaje",
-            color="Serie",
-            markers=True,
-            title=f"% de rendimiento por prueba: {focus_label} vs Colombia",
-            color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]},
-        )
+        melted = by_prueba.melt(id_vars="Prueba Base", value_vars=["acierto_red_pct", "acierto_sede_pct"], var_name="Serie", value_name="Porcentaje")
+        melted["Serie"] = melted["Serie"].map({"acierto_red_pct": "Colombia", "acierto_sede_pct": focus_label})
+        fig = px.line(melted, x="Prueba Base", y="Porcentaje", color="Serie", markers=True, title=f"% de rendimiento por prueba: {focus_label} vs Colombia", color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]})
         fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="")
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
@@ -1567,65 +1459,38 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
         .reset_index()
         .pivot(index="Sede Corta", columns="Prueba Base", values="Acierto")
     )
-    fig = px.imshow(
-        heat,
-        text_auto=True,
-        aspect="auto",
-        title="% de rendimiento por sede y prueba",
-        color_continuous_scale=theme["heat_scale"],
-    )
+    fig = px.imshow(heat, text_auto=True, aspect="auto", title="% de rendimiento por sede y prueba", color_continuous_scale=theme["heat_scale"])
     apply_accessible_figure_style(fig, theme)
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Trayectoria por grado: sede focal vs Colombia**")
-    by_grade_net = (
-        df.groupby("Grado", dropna=False)["Acierto"]
-        .mean()
-        .mul(100)
-        .reset_index()
-    )
-    by_grade_focus = (
-        focus_df.groupby("Grado", dropna=False)["Acierto"]
-        .mean()
-        .mul(100)
-        .reset_index()
-        .rename(columns={"Acierto": "Acierto Focus"})
-    )
+    by_grade_net = df.groupby("Grado", dropna=False)["Acierto"].mean().mul(100).reset_index()
+    by_grade_focus = focus_df.groupby("Grado", dropna=False)["Acierto"].mean().mul(100).reset_index().rename(columns={"Acierto": "Acierto Focus"})
     merged = by_grade_net.merge(by_grade_focus, on="Grado", how="left")
     merged["orden"] = merged["Grado"].map(lambda x: grade_sort_key(x)[0])
     merged = merged.sort_values(["orden", "Grado"])
     merged["Grado Etiqueta"] = merged["Grado"].map(grade_display_label)
 
-    melted = merged.melt(
-        id_vars=["Grado", "Grado Etiqueta"],
-        value_vars=["Acierto", "Acierto Focus"],
-        var_name="Serie",
-        value_name="Porcentaje"
-    )
+    melted = merged.melt(id_vars=["Grado", "Grado Etiqueta"], value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Porcentaje")
     melted["Serie"] = melted["Serie"].map({"Acierto": "Colombia", "Acierto Focus": focus_label})
-    fig = px.line(
-        melted,
-        x="Grado Etiqueta",
-        y="Porcentaje",
-        color="Serie",
-        markers=True,
-        title=f"Trayectoria por grado: {focus_label} vs Colombia",
-        color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]},
-    )
+    fig = px.line(melted, x="Grado Etiqueta", y="Porcentaje", color="Serie", markers=True, title=f"Trayectoria por grado: {focus_label} vs Colombia", color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]})
     fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="")
     apply_accessible_figure_style(fig, theme)
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Lectura rápida para docentes y directivos**")
-    comp = add_benchmark(df, focus_df, "Competencia")
-    comp = sort_benchmark(comp, "Competencia")
+    comp_df = df[~df["Prueba Base"].map(is_english_prueba)].copy()
+    comp_focus_df = focus_df[~focus_df["Prueba Base"].map(is_english_prueba)].copy()
+    if comp_df.empty:
+        comp_df = df.copy()
+        comp_focus_df = focus_df.copy()
 
+    comp = sort_benchmark(add_benchmark(comp_df, comp_focus_df, "Competencia"), "Competencia")
     weakest = comp.sort_values("brecha_pp").head(5).rename(columns={
         "acierto_sede_pct": "% de rendimiento en la sede",
         "acierto_red_pct": "% de rendimiento en Colombia",
         "brecha_pp": "Brecha frente a Colombia (pp)",
     })[["Competencia", "% de rendimiento en la sede", "% de rendimiento en Colombia", "Brecha frente a Colombia (pp)"]]
-
     strongest = comp.sort_values("brecha_pp", ascending=False).head(5).rename(columns={
         "acierto_sede_pct": "% de rendimiento en la sede",
         "acierto_red_pct": "% de rendimiento en Colombia",
@@ -1638,11 +1503,185 @@ def show_overview_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str
     st.dataframe(strongest, use_container_width=True, hide_index=True)
 
 
-def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.DataFrame, focus_label: str):
-    theme = get_theme_tokens()
+def classify_english_levels(df_english: pd.DataFrame) -> pd.DataFrame:
+    if df_english.empty:
+        return pd.DataFrame()
 
+    work = df_english[df_english["Nivel Inglés"].notna()].copy()
+    if work.empty:
+        return pd.DataFrame()
+
+    level_perf = (
+        work.groupby(["ID Estudiante", "Sede", "Sede Corta", "Grado", "Nivel Inglés"], dropna=False)["Acierto"]
+        .mean()
+        .reset_index(name="pct_acierto")
+    )
+
+    pivot = (
+        level_perf.pivot_table(
+            index=["ID Estudiante", "Sede", "Sede Corta", "Grado"],
+            columns="Nivel Inglés",
+            values="pct_acierto",
+            aggfunc="mean",
+        )
+        .reindex(columns=ENGLISH_LEVEL_ORDER)
+        .reset_index()
+    )
+
+    def _pick_level(row: pd.Series):
+        scores = []
+        for lvl in ENGLISH_LEVEL_ORDER:
+            val = row.get(lvl)
+            if pd.notna(val):
+                scores.append((lvl, float(val)))
+        if not scores:
+            return np.nan
+        best = max(v for _, v in scores)
+        tied = [lvl for lvl, v in scores if v == best]
+        for lvl in ENGLISH_LEVEL_ORDER:
+            if lvl in tied:
+                return lvl
+        return tied[0]
+
+    pivot["Nivel CEFR"] = pivot.apply(_pick_level, axis=1)
+    pivot["Mejor % de acierto"] = pivot[ENGLISH_LEVEL_ORDER].max(axis=1).mul(100).round(2)
+    pivot["Grado Etiqueta"] = pivot["Grado"].map(grade_display_label)
+    pivot["Grado Orden"] = pivot["Grado"].map(lambda x: grade_sort_key(x)[0])
+    return pivot
+
+
+def english_grade_level_counts(student_levels: pd.DataFrame) -> pd.DataFrame:
+    if student_levels.empty:
+        return pd.DataFrame(columns=["Grado", "Grado Etiqueta", "Nivel CEFR", "Estudiantes"])
+    out = (
+        student_levels.groupby(["Grado", "Grado Etiqueta", "Nivel CEFR"], dropna=False)["ID Estudiante"]
+        .nunique()
+        .reset_index(name="Estudiantes")
+    )
+    out["Grado Orden"] = out["Grado"].map(lambda x: grade_sort_key(x)[0])
+    out = out.sort_values(["Grado Orden", "Grado", "Nivel CEFR"]).drop(columns="Grado Orden")
+    return out
+
+
+def english_level_pivot(student_levels: pd.DataFrame) -> pd.DataFrame:
+    counts = english_grade_level_counts(student_levels)
+    if counts.empty:
+        return pd.DataFrame()
+    pivot = (
+        counts.pivot(index="Grado Etiqueta", columns="Nivel CEFR", values="Estudiantes")
+        .reindex(columns=ENGLISH_LEVEL_ORDER)
+        .fillna(0)
+        .astype(int)
+        .reset_index()
+    )
+    return pivot
+
+
+def english_modal_level(student_levels: pd.DataFrame) -> str:
+    if student_levels.empty or student_levels["Nivel CEFR"].dropna().empty:
+        return "Sin dato"
+    freq = student_levels["Nivel CEFR"].value_counts()
+    for lvl in ENGLISH_LEVEL_ORDER:
+        if lvl in freq.index and freq[lvl] == freq.max():
+            return lvl
+    return str(freq.index[0])
+
+
+def render_english_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.DataFrame, focus_label: str) -> None:
+    theme = get_theme_tokens()
+    student_levels_red = classify_english_levels(df_prueba)
+    student_levels_sede = classify_english_levels(focus_prueba)
+
+    if student_levels_red.empty:
+        st.warning("No encontré etiquetas de nivel (Pre A1, A1, A2, B1) dentro de la prueba de Inglés. Revisa si esos niveles están en Competencia, Pregunta o Prueba.")
+        return
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Estudiantes clasificados en la red", f"{safe_nunique(student_levels_red['ID Estudiante']):,}")
+    c2.metric(f"Estudiantes clasificados en {focus_label}", f"{safe_nunique(student_levels_sede['ID Estudiante']):,}")
+    c3.metric("Nivel más frecuente en la red", english_modal_level(student_levels_red))
+    c4.metric(f"Nivel más frecuente en {focus_label}", english_modal_level(student_levels_sede))
+
+    st.markdown("**Inglés se clasifica por nivel CEFR según el mayor porcentaje de acierto del estudiante**")
+    st.caption("Para cada estudiante se compara su desempeño en Pre A1, A1, A2 y B1. El nivel con mejor porcentaje de acierto se toma como el nivel probable.")
+
+    red_counts = english_grade_level_counts(student_levels_red)
+    sede_counts = english_grade_level_counts(student_levels_sede)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if sede_counts.empty:
+            st.info(f"La sede {focus_label} no tiene estudiantes clasificables en Inglés con los filtros actuales.")
+        else:
+            fig = px.bar(
+                sede_counts,
+                x="Grado Etiqueta",
+                y="Estudiantes",
+                color="Nivel CEFR",
+                barmode="stack",
+                title=f"{focus_label}: cantidad de estudiantes por grado y nivel",
+                category_orders={"Nivel CEFR": ENGLISH_LEVEL_ORDER},
+            )
+            fig.update_layout(xaxis_title="Grado", yaxis_title="Cantidad de estudiantes")
+            apply_accessible_figure_style(fig, theme)
+            st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        fig = px.bar(
+            red_counts,
+            x="Grado Etiqueta",
+            y="Estudiantes",
+            color="Nivel CEFR",
+            barmode="stack",
+            title="Red filtrada: cantidad de estudiantes por grado y nivel",
+            category_orders={"Nivel CEFR": ENGLISH_LEVEL_ORDER},
+        )
+        fig.update_layout(xaxis_title="Grado", yaxis_title="Cantidad de estudiantes")
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("**Tabla por grado del marco común europeo**")
+    t1, t2 = st.columns(2)
+    with t1:
+        st.markdown(f"**{focus_label}**")
+        st.dataframe(english_level_pivot(student_levels_sede), use_container_width=True, hide_index=True)
+    with t2:
+        st.markdown("**Red filtrada**")
+        st.dataframe(english_level_pivot(student_levels_red), use_container_width=True, hide_index=True)
+
+    if not student_levels_sede.empty:
+        level_mix = (
+            student_levels_sede["Nivel CEFR"].value_counts(normalize=True)
+            .reindex(ENGLISH_LEVEL_ORDER)
+            .fillna(0)
+            .mul(100)
+            .round(2)
+            .reset_index()
+        )
+        level_mix.columns = ["Nivel CEFR", "% de estudiantes"]
+        fig = px.bar(
+            level_mix,
+            x="Nivel CEFR",
+            y="% de estudiantes",
+            text="% de estudiantes",
+            title=f"Distribución porcentual de niveles en {focus_label}",
+            category_orders={"Nivel CEFR": ENGLISH_LEVEL_ORDER},
+            color_discrete_sequence=[theme["primary"]],
+        )
+        fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
+        fig.update_layout(xaxis_title="Nivel", yaxis_title="% de estudiantes")
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+
+def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.DataFrame, focus_label: str) -> None:
+    theme = get_theme_tokens()
     if df_prueba.empty:
         st.info("No hay datos para esta prueba.")
+        return
+
+    if is_english_prueba(prueba):
+        render_english_prueba_panel(prueba, df_prueba, focus_prueba, focus_label)
         return
 
     colombia_pct = safe_pct(df_prueba["Acierto"])
@@ -1650,8 +1689,7 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
     brecha = focus_pct - colombia_pct if pd.notna(focus_pct) else np.nan
 
     focus_bench = focus_prueba if not focus_prueba.empty else df_prueba.iloc[0:0]
-    by_comp = add_benchmark(df_prueba, focus_bench, "Competencia")
-    by_comp = sort_benchmark(by_comp, "Competencia")
+    by_comp = sort_benchmark(add_benchmark(df_prueba, focus_bench, "Competencia"), "Competencia")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Promedio Colombia", f"{colombia_pct:.2f}%")
@@ -1660,16 +1698,8 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
     c4.metric("Competencias evaluadas", f"{safe_nunique(df_prueba['Competencia']):,}")
 
     st.markdown("**Comparación por competencia**")
-    melted = by_comp.melt(
-        id_vars="Competencia",
-        value_vars=["acierto_red_pct", "acierto_sede_pct"],
-        var_name="Serie",
-        value_name="Porcentaje"
-    )
-    melted["Serie"] = melted["Serie"].map({
-        "acierto_red_pct": "Colombia",
-        "acierto_sede_pct": focus_label,
-    })
+    melted = by_comp.melt(id_vars="Competencia", value_vars=["acierto_red_pct", "acierto_sede_pct"], var_name="Serie", value_name="Porcentaje")
+    melted["Serie"] = melted["Serie"].map({"acierto_red_pct": "Colombia", "acierto_sede_pct": focus_label})
     melted["orden"] = melted["Competencia"].map(lambda x: competency_sort_key(x)[0])
     melted = melted.sort_values(["orden", "Competencia"])
 
@@ -1686,7 +1716,7 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
     apply_accessible_figure_style(fig, theme)
     st.plotly_chart(fig, use_container_width=True)
 
-    c5, c6 = st.columns([1, 1])
+    c5, c6 = st.columns(2)
     with c5:
         heat = (
             df_prueba.groupby(["Sede Corta", "Competencia"], dropna=False)["Acierto"]
@@ -1698,73 +1728,38 @@ def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.D
         heat["orden"] = heat["Competencia"].map(lambda x: competency_sort_key(x)[0])
         heat = heat.sort_values(["Sede Corta", "orden", "Competencia"]).drop(columns="orden")
         heat = heat.pivot(index="Sede Corta", columns="Competencia", values="Acierto")
-        fig = px.imshow(
-            heat,
-            text_auto=True,
-            aspect="auto",
-            title=f"{prueba}: desempeño por sede y competencia",
-            color_continuous_scale=theme["heat_scale"],
-        )
+        fig = px.imshow(heat, text_auto=True, aspect="auto", title=f"{prueba}: desempeño por sede y competencia", color_continuous_scale=theme["heat_scale"])
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
     with c6:
-        grade_net = (
-            df_prueba.groupby("Grado", dropna=False)["Acierto"]
-            .mean()
-            .mul(100)
-            .reset_index()
-        )
-        grade_focus = (
-            focus_prueba.groupby("Grado", dropna=False)["Acierto"]
-            .mean()
-            .mul(100)
-            .reset_index()
-            .rename(columns={"Acierto": "Acierto Focus"})
-        )
+        grade_net = df_prueba.groupby("Grado", dropna=False)["Acierto"].mean().mul(100).reset_index()
+        grade_focus = focus_prueba.groupby("Grado", dropna=False)["Acierto"].mean().mul(100).reset_index().rename(columns={"Acierto": "Acierto Focus"})
         grade = grade_net.merge(grade_focus, on="Grado", how="left")
         grade["orden"] = grade["Grado"].map(lambda x: grade_sort_key(x)[0])
         grade = grade.sort_values(["orden", "Grado"])
         grade["Grado Etiqueta"] = grade["Grado"].map(grade_display_label)
 
-        melted = grade.melt(
-            id_vars=["Grado", "Grado Etiqueta"],
-            value_vars=["Acierto", "Acierto Focus"],
-            var_name="Serie",
-            value_name="Porcentaje"
-        )
+        melted = grade.melt(id_vars=["Grado", "Grado Etiqueta"], value_vars=["Acierto", "Acierto Focus"], var_name="Serie", value_name="Porcentaje")
         melted["Serie"] = melted["Serie"].map({"Acierto": "Colombia", "Acierto Focus": focus_label})
-
-        fig = px.line(
-            melted,
-            x="Grado Etiqueta",
-            y="Porcentaje",
-            color="Serie",
-            markers=True,
-            title=f"{prueba}: trayectoria por grado",
-            color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]},
-        )
+        fig = px.line(melted, x="Grado Etiqueta", y="Porcentaje", color="Serie", markers=True, title=f"{prueba}: trayectoria por grado", color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]})
         fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="")
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("**Tabla de comparación por competencia**")
-    st.dataframe(
-        friendly_comp_table(by_comp),
-        use_container_width=True,
-        hide_index=True
-    )
+    st.dataframe(friendly_comp_table(by_comp), use_container_width=True, hide_index=True)
 
 
-def show_pruebas_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
+def show_pruebas_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str) -> None:
     st.subheader("Detalle por prueba")
     with st.expander("Cómo leer esta pestaña", expanded=False):
         st.markdown(
             """
             - Cada pestaña resume una prueba completa.
             - La comparación principal siempre es **sede focal vs Colombia**.
+            - En **Inglés** la lectura cambia: no se resume por dimensión, sino por **nivel CEFR** (Pre A1, A1, A2, B1).
             - Si una competencia queda por debajo de Colombia, suele ser un buen punto de partida para planear refuerzos.
-            - La trayectoria por grado ayuda a detectar en qué momento cae o mejora el desempeño.
             """
         )
 
@@ -1774,28 +1769,11 @@ def show_pruebas_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str)
         return
 
     prueba_tabs = st.tabs(pruebas)
-
     for tab, prueba in zip(prueba_tabs, pruebas):
         with tab:
             df_prueba = df[df["Prueba Base"] == prueba].copy()
             focus_prueba = focus_df[focus_df["Prueba Base"] == prueba].copy()
             render_prueba_panel(prueba, df_prueba, focus_prueba, focus_label)
-
-
-def distractor_table(df_scope: pd.DataFrame, question_id: int | float) -> pd.DataFrame:
-    data = df_scope[df_scope["QuestionId"] == question_id].copy()
-    if data.empty:
-        return pd.DataFrame()
-    out = (
-        data.groupby(["Respuesta Limpia", "Acierto"], dropna=False)
-        .size()
-        .reset_index(name="selecciones")
-        .sort_values("selecciones", ascending=False)
-    )
-    total = out["selecciones"].sum()
-    out["porcentaje"] = (out["selecciones"] / total * 100).round(2)
-    out["tipo"] = np.where(out["Acierto"] == 1, "Respuesta correcta", "Distractor")
-    return out[["tipo", "Respuesta Limpia", "selecciones", "porcentaje", "Acierto"]]
 
 
 def build_question_bank(items_prueba: pd.DataFrame) -> pd.DataFrame:
@@ -1804,10 +1782,7 @@ def build_question_bank(items_prueba: pd.DataFrame) -> pd.DataFrame:
     ordered = items_prueba.copy()
     ordered = ordered.sort_values(["Grado Orden", "Grado", "dificultad", "p_bis"], ascending=[True, True, True, False]).reset_index(drop=True)
     ordered["orden_en_grado"] = ordered.groupby("Grado").cumcount() + 1
-    ordered["selector_label"] = ordered.apply(
-        lambda row: f"Pregunta {int(row['orden_en_grado'])} · Grado {row['Grado Etiqueta']}",
-        axis=1,
-    )
+    ordered["selector_label"] = ordered.apply(lambda row: f"Pregunta {int(row['orden_en_grado'])} · Grado {row['Grado Etiqueta']}", axis=1)
     return ordered
 
 
@@ -1816,11 +1791,7 @@ def build_option_comparison(question_id: int | float, colombia_df: pd.DataFrame,
         data = frame[frame["QuestionId"] == question_id].copy()
         if data.empty:
             return pd.DataFrame(columns=["Respuesta Limpia", "Acierto", pct_col])
-        out = (
-            data.groupby(["Respuesta Limpia", "Acierto"], dropna=False)
-            .size()
-            .reset_index(name="n")
-        )
+        out = data.groupby(["Respuesta Limpia", "Acierto"], dropna=False).size().reset_index(name="n")
         total = out["n"].sum()
         out[pct_col] = np.where(total > 0, out["n"] / total * 100, 0)
         return out[["Respuesta Limpia", "Acierto", pct_col]]
@@ -1862,7 +1833,6 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
         ))
 
     marker_colors = [theme["success"] if t == "Respuesta correcta" else theme["muted"] for t in option_comp["tipo"]]
-
     fig.add_trace(go.Scatter(
         x=option_comp["pct_colombia"],
         y=option_comp["Opción de respuesta gráfico"],
@@ -1872,12 +1842,7 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
         textposition="top left",
         textfont=dict(color=theme["text"]),
         cliponaxis=False,
-        marker=dict(
-            symbol="circle",
-            size=12,
-            color=marker_colors,
-            line=dict(color=theme["background"], width=1),
-        ),
+        marker=dict(symbol="circle", size=12, color=marker_colors, line=dict(color=theme["background"], width=1)),
     ))
     fig.add_trace(go.Scatter(
         x=option_comp["pct_sede"],
@@ -1888,12 +1853,7 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
         textposition="top right",
         textfont=dict(color=theme["text"]),
         cliponaxis=False,
-        marker=dict(
-            symbol="diamond",
-            size=12,
-            color=marker_colors,
-            line=dict(color=theme["background"], width=1),
-        ),
+        marker=dict(symbol="diamond", size=12, color=marker_colors, line=dict(color=theme["background"], width=1)),
     ))
     fig.update_layout(
         template=theme["plotly_template"],
@@ -1906,12 +1866,7 @@ def option_dumbbell_chart(option_comp: pd.DataFrame, focus_label: str) -> go.Fig
         height=max(420, 120 + 95 * len(option_comp)),
         margin=dict(l=10, r=30, t=70, b=20),
         yaxis=dict(automargin=True, tickfont=dict(size=12, color=theme["text"])),
-        xaxis=dict(
-            tickfont=dict(size=12, color=theme["text"]),
-            range=[0, x_upper],
-            gridcolor=theme["grid"],
-            zerolinecolor=theme["grid"],
-        ),
+        xaxis=dict(tickfont=dict(size=12, color=theme["text"]), range=[0, x_upper], gridcolor=theme["grid"], zerolinecolor=theme["grid"]),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1.0),
     )
     return fig
@@ -1938,9 +1893,8 @@ def render_compact_summary_card(title: str, value: str, tone: str | None = None)
     )
 
 
-def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
+def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str) -> None:
     theme = get_theme_tokens()
-
     st.subheader("Análisis de las respuestas")
     with st.expander("Cómo leer esta pestaña", expanded=False):
         st.markdown(
@@ -2035,11 +1989,7 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
     st.markdown(f"**Competencia:** {item_row['Competencia']}")
     st.markdown(f"**Pregunta:** {item_row['Pregunta']}")
 
-    option_comp = build_option_comparison(
-        selected_q,
-        colombia_prueba_df,
-        focus_prueba_df if not focus_prueba_df.empty else colombia_prueba_df
-    )
+    option_comp = build_option_comparison(selected_q, colombia_prueba_df, focus_prueba_df if not focus_prueba_df.empty else colombia_prueba_df)
     if option_comp.empty:
         st.info("No hay opciones de respuesta para esta pregunta con el filtro actual.")
         return
@@ -2062,16 +2012,13 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
         notes.append("Es una pregunta accesible. Sirve para verificar aprendizajes básicos, aunque suele diferenciar menos entre estudiantes.")
     else:
         notes.append("Tiene una dificultad equilibrada y ayuda a observar diferencias reales de comprensión.")
-
     if pd.notna(item_row["p_bis"]) and item_row["p_bis"] < 0:
         notes.append("La discriminación negativa es una alerta. Vale la pena revisar la clave, el enunciado o la alineación con lo enseñado.")
     elif pd.notna(item_row["p_bis"]) and item_row["p_bis"] >= 0.20:
         notes.append("La pregunta diferencia razonablemente entre niveles de desempeño.")
-
     strongest_distractor = option_comp[option_comp["tipo"] == "Distractor"]
     if not strongest_distractor.empty and strongest_distractor.iloc[0]["pct_sede"] >= 25:
         notes.append("El distractor principal está capturando muchas respuestas en la sede focal. Puede revelar una confusión frecuente que merece retroalimentación explícita.")
-
     for note in notes:
         st.write(f"- {note}")
 
@@ -2084,21 +2031,17 @@ def show_psychometrics_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label
         color="Competencia",
         hover_name="item_label",
         hover_data={"d27": True, "dificultad_pct": True},
-        title=f"{selected_prueba}: mapa de preguntas (dificultad y discriminación)"
+        title=f"{selected_prueba}: mapa de preguntas (dificultad y discriminación)",
     )
     fig.add_vline(x=0.50, line_dash="dash", line_color=theme["muted"])
     fig.add_hline(y=0.20, line_dash="dash", line_color=theme["muted"])
-    fig.update_layout(
-        xaxis_title="Dificultad (proporción de respuestas correctas)",
-        yaxis_title="Discriminación (point-biserial)"
-    )
+    fig.update_layout(xaxis_title="Dificultad (proporción de respuestas correctas)", yaxis_title="Discriminación (point-biserial)")
     apply_accessible_figure_style(fig, theme)
     st.plotly_chart(fig, use_container_width=True)
 
 
-def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
+def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str) -> None:
     theme = get_theme_tokens()
-
     st.subheader("Análisis de antigüedad del estudiante")
     with st.expander("Cómo leer esta pestaña", expanded=False):
         st.markdown(
@@ -2116,27 +2059,10 @@ def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: s
 
     net = net.sort_values("Antiguedad")
     c1, c2 = st.columns(2)
-
     with c1:
-        melted = net.melt(
-            id_vars="Antiguedad",
-            value_vars=["acierto_red_pct", "acierto_sede_pct"],
-            var_name="Serie",
-            value_name="Porcentaje"
-        )
-        melted["Serie"] = melted["Serie"].map({
-            "acierto_red_pct": "Colombia",
-            "acierto_sede_pct": focus_label,
-        })
-        fig = px.line(
-            melted,
-            x="Antiguedad",
-            y="Porcentaje",
-            color="Serie",
-            markers=True,
-            title="Desempeño por antigüedad",
-            color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]},
-        )
+        melted = net.melt(id_vars="Antiguedad", value_vars=["acierto_red_pct", "acierto_sede_pct"], var_name="Serie", value_name="Porcentaje")
+        melted["Serie"] = melted["Serie"].map({"acierto_red_pct": "Colombia", "acierto_sede_pct": focus_label})
+        fig = px.line(melted, x="Antiguedad", y="Porcentaje", color="Serie", markers=True, title="Desempeño por antigüedad", color_discrete_map={"Colombia": theme["muted"], focus_label: theme["primary"]})
         fig.update_layout(yaxis_title="% de rendimiento", xaxis_title="Años de antigüedad")
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
@@ -2144,19 +2070,10 @@ def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: s
     with c2:
         bar_colors = [theme["success"] if x >= 0 else theme["danger"] for x in net["brecha_pp"]]
         fig = go.Figure()
-        fig.add_trace(go.Bar(
-            x=net["Antiguedad"],
-            y=net["brecha_pp"],
-            text=net["brecha_pp"],
-            marker_color=bar_colors,
-        ))
+        fig.add_trace(go.Bar(x=net["Antiguedad"], y=net["brecha_pp"], text=net["brecha_pp"], marker_color=bar_colors))
         fig.add_hline(y=0, line_dash="dash", line_color=theme["muted"])
         fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-        fig.update_layout(
-            title=f"Brecha por antigüedad: {focus_label} vs Colombia",
-            yaxis_title="Puntos porcentuales",
-            xaxis_title="Años de antigüedad",
-        )
+        fig.update_layout(title=f"Brecha por antigüedad: {focus_label} vs Colombia", yaxis_title="Puntos porcentuales", xaxis_title="Años de antigüedad")
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -2173,113 +2090,25 @@ def show_antiguedad_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: s
     if heat.empty:
         st.info("La sede focal no tiene suficiente información en este filtro para el cruce.")
     else:
-        fig = px.imshow(
-            heat,
-            text_auto=True,
-            aspect="auto",
-            title=f"{focus_label}: % de rendimiento por antigüedad y prueba",
-            color_continuous_scale=theme["heat_scale"],
-        )
+        fig = px.imshow(heat, text_auto=True, aspect="auto", title=f"{focus_label}: % de rendimiento por antigüedad y prueba", color_continuous_scale=theme["heat_scale"])
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
 
-def show_exports_tab(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str):
-    st.subheader("Descargas agregadas")
-    summary_sede = add_benchmark(df, focus_df, "Sede")
-    summary_prueba = add_benchmark(df, focus_df, "Prueba Base")
-    summary_comp = add_benchmark(df, focus_df, "Competencia")
-    summary_ant = add_benchmark(df.dropna(subset=["Antiguedad"]), focus_df.dropna(subset=["Antiguedad"]), "Antiguedad")
-
-    item_net = item_metrics(df)
-    item_focus = item_metrics(focus_df) if not focus_df.empty else pd.DataFrame()
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Resumen por sede**")
-        st.dataframe(summary_sede, use_container_width=True, hide_index=True, height=260)
-        st.download_button(
-            "Descargar resumen por sede",
-            data=summary_sede.to_csv(index=False).encode("utf-8-sig"),
-            file_name="resumen_por_sede.csv",
-            mime="text/csv"
-        )
-    with c2:
-        st.markdown("**Resumen por prueba**")
-        st.dataframe(summary_prueba, use_container_width=True, hide_index=True, height=260)
-        st.download_button(
-            "Descargar resumen por prueba",
-            data=summary_prueba.to_csv(index=False).encode("utf-8-sig"),
-            file_name="resumen_por_prueba.csv",
-            mime="text/csv"
-        )
-
-    c3, c4 = st.columns(2)
-    with c3:
-        st.markdown("**Resumen por competencia**")
-        st.dataframe(summary_comp, use_container_width=True, hide_index=True, height=260)
-        st.download_button(
-            "Descargar resumen por competencia",
-            data=summary_comp.to_csv(index=False).encode("utf-8-sig"),
-            file_name="resumen_por_competencia.csv",
-            mime="text/csv"
-        )
-    with c4:
-        st.markdown("**Resumen por antigüedad**")
-        st.dataframe(summary_ant, use_container_width=True, hide_index=True, height=260)
-        st.download_button(
-            "Descargar resumen por antigüedad",
-            data=summary_ant.to_csv(index=False).encode("utf-8-sig"),
-            file_name="resumen_por_antiguedad.csv",
-            mime="text/csv"
-        )
-
-    st.markdown("**Banco psicométrico agregado**")
-    scope_choice = st.radio("Fuente del banco", ["Colombia", focus_label], horizontal=True)
-    table = item_net if scope_choice == "Colombia" else item_focus
-    if table.empty:
-        st.info("No hay datos para el banco seleccionado.")
-    else:
-        st.dataframe(
-            table[[
-                "QuestionId", "Prueba Base", "Competencia", "dificultad_pct",
-                "p_bis", "d27", "distractor_top", "pct_distractor_top", "estado_item"
-            ]],
-            use_container_width=True,
-            hide_index=True,
-            height=420
-        )
-        st.download_button(
-            "Descargar banco psicométrico",
-            data=table.to_csv(index=False).encode("utf-8-sig"),
-            file_name="banco_psicometrico.csv",
-            mime="text/csv"
-        )
-
-
 def apply_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
     st.sidebar.header("Enfoque del tablero")
-
-    sedes_base = (
-        df[["Sede", "Sede Corta"]]
-        .dropna()
-        .drop_duplicates()
-        .sort_values("Sede Corta")
-    )
-
+    sedes_base = df[["Sede", "Sede Corta"]].dropna().drop_duplicates().sort_values("Sede Corta")
     if sedes_base.empty:
         return df.iloc[0:0], df.iloc[0:0], "Sin sede"
 
     sede_labels = sedes_base["Sede Corta"].tolist()
     label_to_sede = {row["Sede Corta"]: row["Sede"] for _, row in sedes_base.iterrows()}
-
     sede_focal_label = st.sidebar.selectbox("Sede focal", sede_labels, index=0)
 
     grades = sorted(df["Grado"].dropna().unique().tolist(), key=grade_sort_key)
     selected_grades = st.sidebar.multiselect("Grado", grades, default=grades)
 
     df_grado = df[df["Grado"].isin(selected_grades)] if selected_grades else df.iloc[0:0]
-
     courses = sorted(df_grado["Curso"].dropna().unique().tolist(), key=course_sort_key)
     selected_courses = st.sidebar.multiselect("Curso", courses, default=courses)
 
@@ -2292,9 +2121,7 @@ def apply_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
 
     sede_value = label_to_sede[sede_focal_label]
     focus_df = filtered[filtered["Sede"] == sede_value].copy()
-    focus_label = sede_focal_label
-
-    return filtered, focus_df, focus_label
+    return filtered, focus_df, sede_focal_label
 
 
 @st.cache_data(show_spinner=False)
@@ -2316,50 +2143,50 @@ def align_socio_to_academic_scope(socio_df: pd.DataFrame, academic_filtered: pd.
         return empty, empty
 
     out = socio_df.copy()
-    out = out[out['Indicador'].notna()].copy()
+    out = out[out["Indicador"].notna()].copy()
 
-    grade_values = sorted(academic_filtered['Grado'].dropna().astype(str).unique().tolist(), key=socio_grade_sort_key)
+    grade_values = sorted(academic_filtered["Grado"].dropna().astype(str).unique().tolist(), key=socio_grade_sort_key)
     if grade_values:
-        overlap_grades = [g for g in grade_values if g in set(out['Grado'].dropna().astype(str).tolist())]
+        overlap_grades = [g for g in grade_values if g in set(out["Grado"].dropna().astype(str).tolist())]
         if overlap_grades:
-            out = out[out['Grado'].astype(str).isin(overlap_grades)].copy()
+            out = out[out["Grado"].astype(str).isin(overlap_grades)].copy()
 
-    gender_values = sorted(academic_filtered['Genero'].dropna().astype(str).unique().tolist())
+    gender_values = sorted(academic_filtered["Genero"].dropna().astype(str).unique().tolist())
     if gender_values:
-        overlap_genders = [g for g in gender_values if g in set(out['Genero'].dropna().astype(str).tolist())]
+        overlap_genders = [g for g in gender_values if g in set(out["Genero"].dropna().astype(str).tolist())]
         if overlap_genders:
-            out = out[out['Genero'].astype(str).isin(overlap_genders)].copy()
+            out = out[out["Genero"].astype(str).isin(overlap_genders)].copy()
 
-    academic_courses = {str(x).strip() for x in academic_filtered['Curso'].dropna().astype(str).tolist() if str(x).strip()}
-    socio_sections = {str(x).strip() for x in out['Seccion'].dropna().astype(str).tolist() if str(x).strip()}
+    academic_courses = {str(x).strip() for x in academic_filtered["Curso"].dropna().astype(str).tolist() if str(x).strip()}
+    socio_sections = {str(x).strip() for x in out["Seccion"].dropna().astype(str).tolist() if str(x).strip()}
     overlap_sections = sorted(academic_courses & socio_sections, key=socio_course_sort_key)
     if overlap_sections:
-        out = out[out['Seccion'].astype(str).isin(overlap_sections)].copy()
+        out = out[out["Seccion"].astype(str).isin(overlap_sections)].copy()
 
-    focus_df = out[out['Sede Corta'] == focus_label].copy()
+    focus_df = out[out["Sede Corta"] == focus_label].copy()
     return out, focus_df
 
 
 def socio_status_label(score: float, gap: float, coverage: float) -> str:
     if pd.isna(coverage) or coverage < 60:
-        return 'Dato insuficiente'
+        return "Dato insuficiente"
     if pd.notna(score) and pd.notna(gap) and score >= 75 and gap >= -5:
-        return 'Fortaleza'
+        return "Fortaleza"
     if pd.notna(score) and pd.notna(gap) and (score < 60 or gap <= -8):
-        return 'Atención prioritaria'
-    return 'Seguimiento'
+        return "Atención prioritaria"
+    return "Seguimiento"
 
 
 def socio_teacher_note(score: float, gap: float, coverage: float) -> str:
     if pd.isna(coverage) or coverage < 60:
-        return 'Revisar captura o cobertura antes de intervenir.'
+        return "Revisar captura o cobertura antes de intervenir."
     if pd.notna(score) and pd.notna(gap) and score >= 75 and gap >= 0:
-        return 'Mantener esta práctica y usarla como referencia para otros cursos.'
+        return "Mantener esta práctica y usarla como referencia para otros cursos."
     if pd.notna(score) and pd.notna(gap) and gap <= -8:
-        return 'Priorizar acompañamiento y seguimiento cercano frente a la red.'
+        return "Priorizar acompañamiento y seguimiento cercano frente a la red."
     if pd.notna(score) and score < 60:
-        return 'Conviene abrir conversación con docentes y mentores sobre este punto.'
-    return 'Monitorear con el director de grupo y revisar evolución en el siguiente corte.'
+        return "Conviene abrir conversación con docentes y mentores sobre este punto."
+    return "Monitorear con el director de grupo y revisar evolución en el siguiente corte."
 
 
 def render_socio_insight_card(title: str, indicator: str, detail: str, tone: str) -> None:
@@ -2372,7 +2199,7 @@ def render_socio_insight_card(title: str, indicator: str, detail: str, tone: str
             border-radius:14px;
             padding:0.95rem 1rem;
             min-height:128px;
-        " >
+        ">
             <div style="font-size:0.9rem; color:{theme['muted']}; margin-bottom:0.35rem;">{title}</div>
             <div style="font-size:1.15rem; font-weight:700; color:{tone}; line-height:1.25;">{indicator}</div>
             <div style="font-size:0.9rem; color:{theme['text']}; margin-top:0.35rem; line-height:1.35;">{detail}</div>
@@ -2384,259 +2211,239 @@ def render_socio_insight_card(title: str, indicator: str, detail: str, tone: str
 
 def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_label: str) -> None:
     theme = get_theme_tokens()
-    st.subheader('Lectura socioemocional de la sede')
-    st.caption('Una sola hoja para contrastar la sede focal frente a la red en clima, apoyo, recursos y habilidades socioemocionales.')
+    st.subheader("Lectura socioemocional de la sede")
+    st.caption("Una sola hoja para contrastar la sede focal frente a la red en clima, apoyo, recursos y habilidades socioemocionales.")
 
     try:
         socio_df = load_prepared_socio_default()
     except Exception as exc:
-        st.warning(f'No pude cargar Auxiliares.xlsx: {exc}')
+        st.warning(f"No pude cargar Auxiliares.xlsx: {exc}")
         return
 
     if socio_df is None:
-        st.info('Para activar esta hoja, agrega `data/Auxiliares.xlsx` al repositorio.')
+        st.info("Para activar esta hoja, agrega `data/Auxiliares.xlsx` al repositorio.")
         return
 
     scoped_all, scoped_focus_all = align_socio_to_academic_scope(socio_df, academic_filtered, focus_label)
     if scoped_all.empty:
-        st.info('No encontré registros socioemocionales que coincidan con la sede o los filtros activos del tablero.')
+        st.info("No encontré registros socioemocionales que coincidan con la sede o los filtros activos del tablero.")
         return
 
-    survey_options = ['Todos los ciclos'] + sorted(scoped_all['SurveyName'].dropna().unique().tolist())
-    selected_survey = st.radio(
-        'Ciclo a revisar',
-        survey_options,
-        horizontal=True,
-        key='embedded_socio_survey_filter',
-    )
-
-    if selected_survey == 'Todos los ciclos':
+    survey_options = ["Todos los ciclos"] + sorted(scoped_all["SurveyName"].dropna().unique().tolist())
+    selected_survey = st.radio("Ciclo a revisar", survey_options, horizontal=True, key="embedded_socio_survey_filter")
+    if selected_survey == "Todos los ciclos":
         scoped = scoped_all.copy()
         scoped_focus = scoped_focus_all.copy()
     else:
-        scoped = scoped_all[scoped_all['SurveyName'] == selected_survey].copy()
-        scoped_focus = scoped_focus_all[scoped_focus_all['SurveyName'] == selected_survey].copy()
+        scoped = scoped_all[scoped_all["SurveyName"] == selected_survey].copy()
+        scoped_focus = scoped_focus_all[scoped_focus_all["SurveyName"] == selected_survey].copy()
 
     if scoped.empty:
-        st.info('No hay información socioemocional para ese ciclo con los filtros actuales.')
+        st.info("No hay información socioemocional para ese ciclo con los filtros actuales.")
         return
-
     if scoped_focus.empty:
-        st.warning(f'La sede {focus_label} no tiene registros socioemocionales en el alcance seleccionado.')
+        st.warning(f"La sede {focus_label} no tiene registros socioemocionales en el alcance seleccionado.")
         return
 
-    indicator_bench = socio_sort_socio_benchmark(socio_socio_benchmark(scoped, scoped_focus, 'Indicador'), 'Indicador')
-    indicator_bench = indicator_bench[indicator_bench['Indicador'].notna()].copy()
-
+    indicator_bench = socio_sort_socio_benchmark(socio_socio_benchmark(scoped, scoped_focus, "Indicador"), "Indicador")
+    indicator_bench = indicator_bench[indicator_bench["Indicador"].notna()].copy()
     if indicator_bench.empty:
-        st.info('No hay indicadores socioemocionales interpretables para esta vista.')
+        st.info("No hay indicadores socioemocionales interpretables para esta vista.")
         return
 
-    overall_red = float(scoped['Puntaje Socio'].dropna().mean()) if scoped['Puntaje Socio'].notna().any() else np.nan
-    overall_focus = float(scoped_focus['Puntaje Socio'].dropna().mean()) if scoped_focus['Puntaje Socio'].notna().any() else np.nan
+    overall_red = float(scoped["Puntaje Socio"].dropna().mean()) if scoped["Puntaje Socio"].notna().any() else np.nan
+    overall_focus = float(scoped_focus["Puntaje Socio"].dropna().mean()) if scoped_focus["Puntaje Socio"].notna().any() else np.nan
     overall_gap = overall_focus - overall_red if pd.notna(overall_focus) and pd.notna(overall_red) else np.nan
-    overall_cov = socio_safe_pct(scoped_focus['Respuesta Válida']) * 100
+    overall_cov = socio_safe_pct(scoped_focus["Respuesta Válida"]) * 100
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        render_theme_metric_card('Puntaje de la red', f'{overall_red:.1f}' if pd.notna(overall_red) else 'Sin dato', 'Promedio ordinal 0-100', theme)
+        render_theme_metric_card("Puntaje de la red", f"{overall_red:.1f}" if pd.notna(overall_red) else "Sin dato", "Promedio ordinal 0-100", theme)
     with c2:
-        render_theme_metric_card(f'Puntaje de {focus_label}', f'{overall_focus:.1f}' if pd.notna(overall_focus) else 'Sin dato', 'Lectura global de la sede', theme)
+        render_theme_metric_card(f"Puntaje de {focus_label}", f"{overall_focus:.1f}" if pd.notna(overall_focus) else "Sin dato", "Lectura global de la sede", theme)
     with c3:
-        gap_text = f'{overall_gap:+.1f} pp' if pd.notna(overall_gap) else 'Sin dato'
-        render_theme_metric_card('Brecha frente a la red', gap_text, 'Comparación directa con el mismo filtro', theme)
+        gap_text = f"{overall_gap:+.1f} pp" if pd.notna(overall_gap) else "Sin dato"
+        render_theme_metric_card("Brecha frente a la red", gap_text, "Comparación directa con el mismo filtro", theme)
     with c4:
-        render_theme_metric_card('Cobertura interpretable', f'{overall_cov:.1f}%', 'Evita leer como rezago lo que es un problema de captura', theme)
+        render_theme_metric_card("Cobertura interpretable", f"{overall_cov:.1f}%", "Evita leer como rezago lo que es un problema de captura", theme)
 
-    with st.expander('Cómo leer esta hoja', expanded=False):
+    with st.expander("Cómo leer esta hoja", expanded=False):
         st.markdown(
             f"""
             - Esta vista **no usa aciertos**, usa un **puntaje ordinal 0-100** según la escala de cada pregunta.
             - El contraste siempre es **{focus_label} vs red filtrada**.
             - Mira primero la **brecha**, luego el **puntaje de la sede**, y después la **cobertura**.
-            - Si la cobertura es baja, la señal puede venir de un problema de respuesta y no necesariamente de clima o bienestar.
+            - Las respuestas `0` se omiten del detalle cuando funcionan como dato perdido.
             """
         )
 
-    chart_df = indicator_bench.melt(
-        id_vars='Indicador',
-        value_vars=['puntaje_red', 'puntaje_sede'],
-        var_name='Serie',
-        value_name='Puntaje',
-    )
-    chart_df['Serie'] = chart_df['Serie'].map({'puntaje_red': 'Red', 'puntaje_sede': focus_label})
-    chart_df['Indicador corto'] = chart_df['Indicador'].map(lambda x: socio_wrap_plot_label(x, width=26, max_lines=3))
+    chart_df = indicator_bench.melt(id_vars="Indicador", value_vars=["puntaje_red", "puntaje_sede"], var_name="Serie", value_name="Puntaje")
+    chart_df["Serie"] = chart_df["Serie"].map({"puntaje_red": "Red", "puntaje_sede": focus_label})
+    chart_df["Indicador corto"] = chart_df["Indicador"].map(lambda x: socio_wrap_plot_label(x, width=26, max_lines=3))
 
     col1, col2 = st.columns([1.15, 0.85])
     with col1:
-        fig = px.bar(
-            chart_df,
-            y='Indicador corto',
-            x='Puntaje',
-            color='Serie',
-            barmode='group',
-            orientation='h',
-            title=f'Indicadores socioemocionales: {focus_label} vs red',
-            color_discrete_map={'Red': theme['muted'], focus_label: theme['primary']},
-        )
-        fig.update_layout(yaxis_title='', xaxis_title='Puntaje 0-100', legend_title_text='')
+        fig = px.bar(chart_df, y="Indicador corto", x="Puntaje", color="Serie", barmode="group", orientation="h", title=f"Indicadores socioemocionales: {focus_label} vs red", color_discrete_map={"Red": theme["muted"], focus_label: theme["primary"]})
+        fig.update_layout(yaxis_title="", xaxis_title="Puntaje 0-100", legend_title_text="")
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
-
     with col2:
         gap_df = indicator_bench.copy()
-        gap_df['Indicador corto'] = gap_df['Indicador'].map(lambda x: socio_wrap_plot_label(x, width=22, max_lines=3))
-        gap_df['Estado'] = np.where(gap_df['brecha_puntaje'] >= 0, 'Por encima', 'Por debajo')
-        fig = px.bar(
-            gap_df,
-            y='Indicador corto',
-            x='brecha_puntaje',
-            color='Estado',
-            orientation='h',
-            text='brecha_puntaje',
-            title='Brecha de la sede por indicador',
-            color_discrete_map={'Por encima': theme['success'], 'Por debajo': theme['danger']},
-        )
-        fig.add_vline(x=0, line_dash='dash', line_color=theme['muted'])
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        fig.update_layout(yaxis_title='', xaxis_title='Puntos frente a la red', showlegend=False)
+        gap_df["Indicador corto"] = gap_df["Indicador"].map(lambda x: socio_wrap_plot_label(x, width=22, max_lines=3))
+        gap_df["Estado"] = np.where(gap_df["brecha_puntaje"] >= 0, "Por encima", "Por debajo")
+        fig = px.bar(gap_df, y="Indicador corto", x="brecha_puntaje", color="Estado", orientation="h", text="brecha_puntaje", title="Brecha de la sede por indicador", color_discrete_map={"Por encima": theme["success"], "Por debajo": theme["danger"]})
+        fig.add_vline(x=0, line_dash="dash", line_color=theme["muted"])
+        fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
+        fig.update_layout(yaxis_title="", xaxis_title="Puntos frente a la red", showlegend=False)
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
     priority_df = indicator_bench.copy()
-    priority_df['Semáforo'] = priority_df.apply(lambda r: socio_status_label(r['puntaje_sede'], r['brecha_puntaje'], r['cobertura_sede']), axis=1)
-    priority_df['Lectura sugerida'] = priority_df.apply(lambda r: socio_teacher_note(r['puntaje_sede'], r['brecha_puntaje'], r['cobertura_sede']), axis=1)
+    priority_df["Semáforo"] = priority_df.apply(lambda r: socio_status_label(r["puntaje_sede"], r["brecha_puntaje"], r["cobertura_sede"]), axis=1)
+    priority_df["Lectura sugerida"] = priority_df.apply(lambda r: socio_teacher_note(r["puntaje_sede"], r["brecha_puntaje"], r["cobertura_sede"]), axis=1)
 
-    strongest = priority_df.sort_values(['puntaje_sede', 'brecha_puntaje'], ascending=[False, False]).head(1)
-    weakest = priority_df.sort_values(['brecha_puntaje', 'puntaje_sede'], ascending=[True, True]).head(1)
-    lowest_cov = priority_df.sort_values(['cobertura_sede', 'puntaje_sede'], ascending=[True, False]).head(1)
+    strongest = priority_df.sort_values(["puntaje_sede", "brecha_puntaje"], ascending=[False, False]).head(1)
+    weakest = priority_df.sort_values(["brecha_puntaje", "puntaje_sede"], ascending=[True, True]).head(1)
+    lowest_cov = priority_df.sort_values(["cobertura_sede", "puntaje_sede"], ascending=[True, False]).head(1)
 
-    st.markdown('**Dónde mirar primero**')
+    st.markdown("**Dónde mirar primero**")
     k1, k2, k3 = st.columns(3)
     if not strongest.empty:
         row = strongest.iloc[0]
         with k1:
-            render_socio_insight_card(
-                'Fortaleza más visible',
-                str(row['Indicador']),
-                f"Puntaje sede {row['puntaje_sede']:.1f} | Brecha {row['brecha_puntaje']:+.1f} pp",
-                theme['success'],
-            )
+            render_socio_insight_card("Fortaleza más visible", str(row["Indicador"]), f"Puntaje sede {row['puntaje_sede']:.1f} | Brecha {row['brecha_puntaje']:+.1f} pp", theme["success"])
     if not weakest.empty:
         row = weakest.iloc[0]
         with k2:
-            render_socio_insight_card(
-                'Alerta principal',
-                str(row['Indicador']),
-                f"Puntaje sede {row['puntaje_sede']:.1f} | Brecha {row['brecha_puntaje']:+.1f} pp",
-                theme['danger'],
-            )
+            render_socio_insight_card("Alerta principal", str(row["Indicador"]), f"Puntaje sede {row['puntaje_sede']:.1f} | Brecha {row['brecha_puntaje']:+.1f} pp", theme["danger"])
     if not lowest_cov.empty:
         row = lowest_cov.iloc[0]
         with k3:
-            render_socio_insight_card(
-                'Indicador a validar',
-                str(row['Indicador']),
-                f"Cobertura sede {row['cobertura_sede']:.1f}% | {row['Semáforo']}",
-                theme['warning'],
-            )
+            render_socio_insight_card("Cobertura más baja", str(row["Indicador"]), f"Cobertura sede {row['cobertura_sede']:.1f}% | {row['Semáforo']}", theme["warning"])
 
-    teacher_table = priority_df[[
-        'Indicador', 'puntaje_sede', 'puntaje_red', 'brecha_puntaje', 'favorable_sede', 'cobertura_sede', 'Semáforo', 'Lectura sugerida'
-    ]].rename(columns={
-        'puntaje_sede': f'Puntaje {focus_label}',
-        'puntaje_red': 'Puntaje red',
-        'brecha_puntaje': 'Brecha vs red',
-        'favorable_sede': f'% favorable {focus_label}',
-        'cobertura_sede': f'% cobertura {focus_label}',
+    teacher_table = priority_df[["Indicador", "puntaje_sede", "puntaje_red", "brecha_puntaje", "favorable_sede", "cobertura_sede", "Semáforo", "Lectura sugerida"]].rename(columns={
+        "puntaje_sede": f"Puntaje {focus_label}",
+        "puntaje_red": "Puntaje red",
+        "brecha_puntaje": "Brecha vs red",
+        "favorable_sede": f"% favorable {focus_label}",
+        "cobertura_sede": f"% cobertura {focus_label}",
     })
-
-    st.markdown('**Lectura por indicador para docentes y directivos**')
+    st.markdown("**Lectura por indicador para docentes y directivos**")
     st.dataframe(teacher_table, use_container_width=True, hide_index=True)
 
-    st.markdown('**Bajar al detalle: una pregunta concreta**')
-    indicator_options = priority_df['Indicador'].dropna().tolist()
-    selected_indicator = st.selectbox(
-        'Indicador para profundizar',
-        indicator_options,
-        key='embedded_socio_indicator_selector',
-    )
+    st.markdown("**Bajar al detalle: una lectura concreta**")
+    indicator_options = priority_df["Indicador"].dropna().tolist()
+    selected_indicator = st.selectbox("Indicador para profundizar", indicator_options, key="embedded_socio_indicator_selector")
 
-    qsum = socio_question_summary(
-        scoped[scoped['Indicador'] == selected_indicator],
-        scoped_focus[scoped_focus['Indicador'] == selected_indicator],
-    )
-    qsum = qsum[qsum['TexQuestion'].notna()].copy()
+    qsum = socio_question_summary(scoped[scoped["Indicador"] == selected_indicator], scoped_focus[scoped_focus["Indicador"] == selected_indicator])
+    qsum = qsum[qsum["TexQuestion"].notna()].copy()
     if qsum.empty:
-        st.info('No hay preguntas disponibles para ese indicador.')
+        st.info("No hay preguntas disponibles para ese indicador.")
         return
 
-    qsum = qsum.sort_values(['brecha_puntaje', 'cobertura_sede', 'puntaje_sede'], ascending=[True, True, True]).reset_index(drop=True)
-    question_options = qsum['TexQuestion'].tolist()
-    default_question = question_options[0]
+    qsum = qsum.sort_values(["brecha_puntaje", "cobertura_sede", "puntaje_sede"], ascending=[True, True, True]).reset_index(drop=True)
+    question_options = qsum["TexQuestion"].tolist()
     selected_question = st.selectbox(
-        'Pregunta guía',
+        "Pregunta guía",
         question_options,
-        index=question_options.index(default_question),
-        format_func=lambda x: socio_wrap_plot_label(x, width=90, max_lines=2).replace('<br>', ' '),
-        key='embedded_socio_question_selector',
+        index=0,
+        format_func=lambda x: socio_wrap_plot_label(x, width=90, max_lines=2).replace("<br>", " "),
+        key="embedded_socio_question_selector",
     )
+    qrow = qsum[qsum["TexQuestion"] == selected_question].iloc[0]
 
-    qrow = qsum[qsum['TexQuestion'] == selected_question].iloc[0]
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric('Puntaje red', f"{qrow['puntaje_red']:.1f}")
-    m2.metric(f'Puntaje {focus_label}', f"{qrow['puntaje_sede']:.1f}" if pd.notna(qrow['puntaje_sede']) else 'Sin dato')
-    m3.metric('Brecha', f"{qrow['brecha_puntaje']:+.1f} pp" if pd.notna(qrow['brecha_puntaje']) else 'Sin dato')
-    m4.metric('Cobertura sede', f"{qrow['cobertura_sede']:.1f}%" if pd.notna(qrow['cobertura_sede']) else 'Sin dato')
+    m1.metric("Puntaje red", f"{qrow['puntaje_red']:.1f}")
+    m2.metric(f"Puntaje {focus_label}", f"{qrow['puntaje_sede']:.1f}" if pd.notna(qrow["puntaje_sede"]) else "Sin dato")
+    m3.metric("Brecha", f"{qrow['brecha_puntaje']:+.1f} pp" if pd.notna(qrow["brecha_puntaje"]) else "Sin dato")
+    m4.metric("Cobertura sede", f"{qrow['cobertura_sede']:.1f}%" if pd.notna(qrow["cobertura_sede"]) else "Sin dato")
+    st.markdown(f"**Pregunta:** {selected_question}")
 
-    st.markdown(f'**Pregunta:** {selected_question}')
+    if selected_indicator == "Autoconciencia emocional":
+        st.markdown("**Autoconciencia emocional: aciertos y confusiones por emoción**")
+        emo_summary = socio_emotion_summary(scoped, scoped_focus, focus_label)
+        st.dataframe(emo_summary, use_container_width=True, hide_index=True)
 
-    red_profile = socio_response_profile(scoped, selected_question).rename(columns={'pct': 'Red'})
-    focus_profile = socio_response_profile(scoped_focus, selected_question).rename(columns={'pct': focus_label})
-    merged = red_profile.merge(focus_profile, on='UsAnswerSurv', how='outer').fillna(0)
-    merged['Etiqueta'] = merged['UsAnswerSurv'].map(lambda x: socio_wrap_plot_label(x, width=24, max_lines=3))
-    merged['Pico'] = merged[['Red', focus_label]].max(axis=1)
-    merged = merged.sort_values('Pico', ascending=True)
+        cmat1, cmat2 = st.columns(2)
+        with cmat1:
+            st.markdown(f"**{focus_label}: cómo se confundieron las emociones**")
+            focus_matrix = socio_emotion_confusion_matrix(scoped_focus)
+            if focus_matrix.empty:
+                st.info("No hay suficiente detalle para esta sede.")
+            else:
+                fig = px.imshow(focus_matrix, text_auto=True, aspect="auto", title=f"{focus_label}: emoción objetivo vs respuesta elegida", color_continuous_scale=theme["heat_scale"])
+                apply_accessible_figure_style(fig, theme)
+                st.plotly_chart(fig, use_container_width=True)
+        with cmat2:
+            st.markdown("**Demás sedes: referencia de confusiones**")
+            other_matrix = socio_emotion_confusion_matrix(scoped[scoped["Sede Corta"] != focus_label].copy())
+            if other_matrix.empty:
+                st.info("No hay suficiente detalle en las demás sedes.")
+            else:
+                fig = px.imshow(other_matrix, text_auto=True, aspect="auto", title="Demás sedes: emoción objetivo vs respuesta elegida", color_continuous_scale=theme["heat_scale"])
+                apply_accessible_figure_style(fig, theme)
+                st.plotly_chart(fig, use_container_width=True)
 
-    fig = go.Figure()
-    fig.add_trace(go.Bar(y=merged['Etiqueta'], x=merged['Red'], name='Red', orientation='h', marker_color=theme['muted']))
-    fig.add_trace(go.Bar(y=merged['Etiqueta'], x=merged[focus_label], name=focus_label, orientation='h', marker_color=theme['primary']))
-    fig.update_layout(
-        barmode='group',
-        title='Cómo respondió la sede frente a la red',
-        xaxis_title='% de estudiantes',
-        yaxis_title='',
-        height=max(360, 110 + 70 * len(merged)),
-    )
-    apply_accessible_figure_style(fig, theme)
-    st.plotly_chart(fig, use_container_width=True)
+    else:
+        yes_no_table = socio_yes_no_summary(scoped, scoped_focus, focus_label, selected_indicator)
+        if not yes_no_table.empty:
+            st.markdown("**Conteo de respuestas Sí y No**")
+            st.dataframe(yes_no_table, use_container_width=True, hide_index=True)
 
-    teacher_question_table = qsum[[
-        'TexQuestion', 'puntaje_sede', 'puntaje_red', 'brecha_puntaje', 'cobertura_sede'
-    ]].rename(columns={
-        'TexQuestion': 'Pregunta',
-        'puntaje_sede': f'Puntaje {focus_label}',
-        'puntaje_red': 'Puntaje red',
-        'brecha_puntaje': 'Brecha vs red',
-        'cobertura_sede': f'% cobertura {focus_label}',
+            chart_yes_no = yes_no_table.melt(id_vars=["Pregunta", "Respuesta Reporte"], value_vars=["Conteo sede", "Conteo demás sedes"], var_name="Serie", value_name="Conteo")
+            chart_yes_no["Serie"] = chart_yes_no["Serie"].map({"Conteo sede": focus_label, "Conteo demás sedes": "Demás sedes"})
+            fig = px.bar(
+                chart_yes_no,
+                x="Respuesta Reporte",
+                y="Conteo",
+                color="Serie",
+                facet_row="Pregunta",
+                barmode="group",
+                title="Sí y No por pregunta",
+                color_discrete_map={focus_label: theme["primary"], "Demás sedes": theme["muted"]},
+            )
+            fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+            fig.update_layout(xaxis_title="", yaxis_title="Cantidad de respuestas")
+            apply_accessible_figure_style(fig, theme)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            red_profile = socio_response_profile(scoped, selected_question).rename(columns={"pct": "Red"})
+            focus_profile = socio_response_profile(scoped_focus, selected_question).rename(columns={"pct": focus_label})
+            merged = red_profile.merge(focus_profile, on="Respuesta Reporte", how="outer").fillna(0)
+            merged["Etiqueta"] = merged["Respuesta Reporte"].map(lambda x: socio_wrap_plot_label(x, width=24, max_lines=3))
+            merged["Pico"] = merged[["Red", focus_label]].max(axis=1)
+            merged = merged.sort_values("Pico", ascending=True)
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(y=merged["Etiqueta"], x=merged["Red"], name="Red", orientation="h", marker_color=theme["muted"]))
+            fig.add_trace(go.Bar(y=merged["Etiqueta"], x=merged[focus_label], name=focus_label, orientation="h", marker_color=theme["primary"]))
+            fig.update_layout(barmode="group", title="Cómo respondió la sede frente a la red", xaxis_title="% de estudiantes", yaxis_title="", height=max(360, 110 + 70 * len(merged)))
+            apply_accessible_figure_style(fig, theme)
+            st.plotly_chart(fig, use_container_width=True)
+
+    teacher_question_table = qsum[["TexQuestion", "puntaje_sede", "puntaje_red", "brecha_puntaje", "cobertura_sede"]].rename(columns={
+        "TexQuestion": "Pregunta",
+        "puntaje_sede": f"Puntaje {focus_label}",
+        "puntaje_red": "Puntaje red",
+        "brecha_puntaje": "Brecha vs red",
+        "cobertura_sede": f"% cobertura {focus_label}",
     })
     st.dataframe(teacher_question_table, use_container_width=True, hide_index=True, height=260)
 
-    with st.expander('Chequeo rápido de calidad del dato', expanded=False):
-        low_cov = qsum[qsum['cobertura_sede'] < 80][['TexQuestion', 'cobertura_sede', 'puntaje_sede', 'brecha_puntaje']].rename(columns={
-            'TexQuestion': 'Pregunta',
-            'cobertura_sede': f'% cobertura {focus_label}',
-            'puntaje_sede': f'Puntaje {focus_label}',
-            'brecha_puntaje': 'Brecha vs red',
+    with st.expander("Chequeo rápido de calidad del dato", expanded=False):
+        low_cov = qsum[qsum["cobertura_sede"] < 80][["TexQuestion", "cobertura_sede", "puntaje_sede", "brecha_puntaje"]].rename(columns={
+            "TexQuestion": "Pregunta",
+            "cobertura_sede": f"% cobertura {focus_label}",
+            "puntaje_sede": f"Puntaje {focus_label}",
+            "brecha_puntaje": "Brecha vs red",
         })
         if low_cov.empty:
-            st.success('En este indicador no hay alertas fuertes de cobertura para la sede focal.')
+            st.success("En este indicador no hay alertas fuertes de cobertura para la sede focal.")
         else:
             st.dataframe(low_cov, use_container_width=True, hide_index=True)
 
 
-
-def main():
+def main() -> None:
     st.title("Evaluación Diagnóstica 2026 Calendario A")
     st.caption("Tablero pedagógico para contrastar la sede frente a la red y sumar una lectura socioemocional útil para docentes.")
 
@@ -2654,7 +2461,6 @@ def main():
 
     df = prepare_data(raw)
     filtered, focus_df, focus_label = apply_filters(df)
-
     if filtered.empty:
         st.warning("No hay datos para la combinación de filtros elegida.")
         st.stop()

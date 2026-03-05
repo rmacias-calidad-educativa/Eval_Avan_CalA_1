@@ -220,11 +220,12 @@ def socio_build_socio_question_specs() -> list[dict]:
 
     def add(indicator: str, dimension: str, scale: str, questions: list[str], reverse: list[str] | None = None, survey_scope: list[str] | None = None) -> None:
         reverse_keys = {socio_normalize_text_key(x) for x in reverse or []}
-        scope = {str(x) for x in survey_scope or []}
+        scope = {socio_strip_accents(str(x)).strip().lower() for x in survey_scope or []}
         for q in questions:
             q_key = socio_normalize_text_key(q)
             specs.append({
                 "question_key": q_key,
+                "question_text": q,
                 "indicator": indicator,
                 "dimension": dimension,
                 "scale": scale,
@@ -341,9 +342,54 @@ def socio_build_socio_question_specs() -> list[dict]:
 socio_SOCIO_QUESTION_SPECS = socio_build_socio_question_specs()
 
 
+def socio_specs_dataframe() -> pd.DataFrame:
+    """Tabla estática con el banco de ítems socioemocionales (lo definido en socio_build_socio_question_specs)."""
+    specs = socio_SOCIO_QUESTION_SPECS
+    if not specs:
+        return pd.DataFrame(columns=["Dimension", "Indicador", "Escala", "Pregunta", "Inversa", "SurveyScope"])
+
+    rows = []
+    for s in specs:
+        scope = s.get("survey_scope") or set()
+        scope_label = ", ".join(sorted(scope)) if scope else "Todos los ciclos"
+        rows.append({
+            "Dimension": s.get("dimension"),
+            "Indicador": s.get("indicator"),
+            "Escala": s.get("scale"),
+            "Pregunta": s.get("question_text") or s.get("question_key"),
+            "Inversa": bool(s.get("reverse")),
+            "SurveyScope": scope_label,
+        })
+
+    out = pd.DataFrame(rows)
+    out["__orden_dim__"] = out["Dimension"].map(lambda x: socio_dimension_sort_key(x)[0])
+    out["__orden_ind__"] = out["Indicador"].map(lambda x: socio_indicator_sort_key(x)[0])
+    out = out.sort_values(["__orden_dim__", "__orden_ind__", "Pregunta"]).drop(columns=["__orden_dim__", "__orden_ind__"]).reset_index(drop=True)
+    return out
+
+
+def socio_ensure_report_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Asegura que existan columnas derivadas clave para las vistas (robusto ante cachés/versiones)."""
+    if frame is None or frame.empty:
+        return frame
+    out = frame.copy()
+    if "Respuesta Reporte" not in out.columns:
+        if "Escala" in out.columns and "Answer Key" in out.columns:
+            out["Respuesta Reporte"] = out.apply(
+                lambda r: socio_report_answer_label(str(r.get("Escala")), str(r.get("Answer Key", "")), r.get("UsAnswerSurv")),
+                axis=1,
+            )
+        else:
+            out["Respuesta Reporte"] = np.nan
+    if "Respuesta Válida" not in out.columns:
+        out["Respuesta Válida"] = out.get("Answer Key", pd.Series(index=out.index, dtype=object)).astype(str).str.len().gt(0)
+    return out
+
+
+
 def socio_get_socio_question_spec(question: str, survey_name: str) -> dict | None:
     q_key = socio_normalize_text_key(question)
-    survey_name = str(survey_name)
+    survey_name = socio_strip_accents(str(survey_name)).strip().lower()
     for spec in socio_SOCIO_QUESTION_SPECS:
         if spec["question_key"] != q_key:
             continue
@@ -600,6 +646,8 @@ def socio_response_profile(frame: pd.DataFrame, question: str) -> pd.DataFrame:
 
 
 def socio_yes_no_summary(df: pd.DataFrame, focus_df: pd.DataFrame, focus_label: str, indicator: str) -> pd.DataFrame:
+    df = socio_ensure_report_columns(df)
+    focus_df = socio_ensure_report_columns(focus_df)
     base = df[(df["Indicador"] == indicator) & (df["Escala"] == "yes_no") & (df["Respuesta Reporte"].isin(["Sí", "No"]))].copy()
     focus = focus_df[(focus_df["Indicador"] == indicator) & (focus_df["Escala"] == "yes_no") & (focus_df["Respuesta Reporte"].isin(["Sí", "No"]))].copy()
     other = base[base["Sede Corta"] != focus_label].copy()
@@ -2146,7 +2194,6 @@ def align_socio_to_academic_scope(socio_df: pd.DataFrame, academic_filtered: pd.
         return empty, empty
 
     out = socio_df.copy()
-    out = out[out["Indicador"].notna()].copy()
 
     grade_values = sorted(academic_filtered["Grado"].dropna().astype(str).unique().tolist(), key=socio_grade_sort_key)
     if grade_values:
@@ -2228,6 +2275,8 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
         return
 
     scoped_all, scoped_focus_all = align_socio_to_academic_scope(socio_df, academic_filtered, focus_label)
+    scoped_all = socio_ensure_report_columns(scoped_all)
+    scoped_focus_all = socio_ensure_report_columns(scoped_focus_all)
     if scoped_all.empty:
         st.info("No encontré registros socioemocionales que coincidan con la sede o los filtros activos del tablero.")
         return
@@ -2248,7 +2297,45 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
         st.warning(f"La sede {focus_label} no tiene registros socioemocionales en el alcance seleccionado.")
         return
 
+    # --- Auditoría: banco de ítems y preguntas observadas ---
+    specs_df = socio_specs_dataframe()
+
+    unmapped = scoped[scoped["Indicador"].isna() & scoped["TexQuestion"].notna()].copy()
+    scoped = scoped[scoped["Indicador"].notna()].copy()
+    scoped_focus = scoped_focus[scoped_focus["Indicador"].notna()].copy()
+
+    with st.expander("Banco de ítems y chequeo de mapeo", expanded=False):
+        st.markdown("**Ítems definidos en el tablero (dimensión, indicador, escala, pregunta)**")
+        st.dataframe(specs_df, use_container_width=True, hide_index=True)
+
+        st.markdown("**Preguntas del archivo Auxiliares.xlsx que quedaron sin mapeo**")
+        if unmapped.empty:
+            st.success("No aparecieron preguntas sin mapeo en el alcance seleccionado.")
+        else:
+            um = (
+                unmapped.groupby(["SurveyName", "TexQuestion"], dropna=False)
+                .size()
+                .reset_index(name="respuestas")
+                .sort_values("respuestas", ascending=False)
+            )
+            um["Pregunta"] = um["TexQuestion"].map(lambda x: shorten_text(x, 140))
+            st.dataframe(um[["SurveyName", "Pregunta", "respuestas"]], use_container_width=True, hide_index=True)
+            st.caption("Si aquí aparece algo, suele ser por diferencias de redacción/puntuación en `TexQuestion` frente al banco de ítems.")
+
+    if scoped.empty:
+        st.info("Con los filtros actuales no quedaron preguntas socioemocionales mapeadas a indicador/dimensión.")
+        return
+    if scoped_focus.empty:
+        st.warning(f"La sede {focus_label} no tiene preguntas socioemocionales mapeadas en el alcance seleccionado.")
+        return
+
     indicator_bench = socio_sort_socio_benchmark(socio_socio_benchmark(scoped, scoped_focus, "Indicador"), "Indicador")
+    # Enriquecer con dimensión para poder navegar por dimensión -> indicador
+    ind_dim = scoped[["Indicador", "Dimension"]].dropna().drop_duplicates()
+    indicator_bench = indicator_bench.merge(ind_dim, on="Indicador", how="left")
+
+    dimension_bench = socio_sort_socio_benchmark(socio_socio_benchmark(scoped, scoped_focus, "Dimension"), "Dimension")
+    dimension_bench = dimension_bench[dimension_bench["Dimension"].notna()].copy()
     indicator_bench = indicator_bench[indicator_bench["Indicador"].notna()].copy()
     if indicator_bench.empty:
         st.info("No hay indicadores socioemocionales interpretables para esta vista.")
@@ -2278,6 +2365,26 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
             - Mira primero la **brecha**, luego el **puntaje de la sede**, y después la **cobertura**.
             - Las respuestas `0` se omiten del detalle cuando funcionan como dato perdido.
             """
+        )
+
+    # --- Resumen por dimensión ---
+    if not dimension_bench.empty:
+        st.markdown("**Dimensiones socioemocionales: comparación sede vs red**")
+        dim_table = dimension_bench.rename(columns={
+            "puntaje_red": "Puntaje red",
+            "puntaje_sede": f"Puntaje {focus_label}",
+            "brecha_puntaje": "Brecha vs red",
+            "favorable_red": "% favorable red",
+            "favorable_sede": f"% favorable {focus_label}",
+            "cobertura_sede": f"% cobertura {focus_label}",
+        })
+        st.dataframe(
+            dim_table[[
+                "Dimension", f"Puntaje {focus_label}", "Puntaje red", "Brecha vs red",
+                f"% favorable {focus_label}", f"% cobertura {focus_label}",
+            ]],
+            use_container_width=True,
+            hide_index=True,
         )
 
     chart_df = indicator_bench.melt(id_vars="Indicador", value_vars=["puntaje_red", "puntaje_sede"], var_name="Serie", value_name="Puntaje")
@@ -2324,7 +2431,7 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
         with k3:
             render_socio_insight_card("Cobertura más baja", str(row["Indicador"]), f"Cobertura sede {row['cobertura_sede']:.1f}% | {row['Semáforo']}", theme["warning"])
 
-    teacher_table = priority_df[["Indicador", "puntaje_sede", "puntaje_red", "brecha_puntaje", "favorable_sede", "cobertura_sede", "Semáforo", "Lectura sugerida"]].rename(columns={
+    teacher_table = priority_df[["Dimension", "Indicador", "puntaje_sede", "puntaje_red", "brecha_puntaje", "favorable_sede", "cobertura_sede", "Semáforo", "Lectura sugerida"]].rename(columns={
         "puntaje_sede": f"Puntaje {focus_label}",
         "puntaje_red": "Puntaje red",
         "brecha_puntaje": "Brecha vs red",
@@ -2334,9 +2441,30 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
     st.markdown("**Lectura por indicador para docentes y directivos**")
     st.dataframe(teacher_table, use_container_width=True, hide_index=True)
 
-    st.markdown("**Bajar al detalle: una lectura concreta**")
-    indicator_options = priority_df["Indicador"].dropna().tolist()
+    st.markdown("**Bajar al detalle: dimensión → indicador → preguntas**")
+
+    dim_candidates = priority_df["Dimension"].dropna().unique().tolist()
+    dim_ordered = [d for d in socio_SOCIO_DIMENSION_ORDER if d in dim_candidates]
+    dim_ordered += [d for d in dim_candidates if d not in dim_ordered]
+
+    selected_dimension = st.selectbox("Dimensión para explorar", dim_ordered, key="embedded_socio_dimension_selector")
+
+    indicator_options = (
+        priority_df.loc[priority_df["Dimension"] == selected_dimension, "Indicador"]
+        .dropna()
+        .drop_duplicates()
+        .tolist()
+    )
+    indicator_options = sorted(indicator_options, key=socio_indicator_sort_key)
     selected_indicator = st.selectbox("Indicador para profundizar", indicator_options, key="embedded_socio_indicator_selector")
+
+    # Vista rápida del banco (lo que *debería* aparecer) para este indicador
+    spec_subset = specs_df[specs_df["Indicador"] == selected_indicator].copy()
+    if not spec_subset.empty:
+        st.markdown("**Preguntas definidas para este indicador (banco de ítems)**")
+        st.dataframe(spec_subset[["Escala", "Inversa", "Pregunta", "SurveyScope"]], use_container_width=True, hide_index=True)
+    else:
+        st.info("No encontré preguntas definidas en el banco de ítems para este indicador. Revisa `socio_build_socio_question_specs()`.")
 
     qsum = socio_question_summary(scoped[scoped["Indicador"] == selected_indicator], scoped_focus[scoped_focus["Indicador"] == selected_indicator])
     qsum = qsum[qsum["TexQuestion"].notna()].copy()

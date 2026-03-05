@@ -245,7 +245,6 @@ def socio_build_socio_question_specs() -> list[dict]:
         "Prefiero NO hablar con mis padres.",
         "Respiro profundamente para calmarme.",
     ], reverse=["Me encierro en mi cuarto.", "Prefiero NO hablar con mis padres."])
-    # Autoeficacia se elimina del tablero por solicitud del usuario.
     add("Aprendizaje colaborativo", "Factores asociados", "three_mucho_literal", [
         "Respeto las ideas de todos mis compañeros cuando trabajo en grupo.",
         "Aprendo más cuando trabajo con otros compañeros.",
@@ -2454,11 +2453,10 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
     # -------------------------
     priority_df = indicator_bench.copy()
     priority_df["Semáforo"] = priority_df.apply(lambda r: socio_status_label(r["puntaje_sede"], r["brecha_puntaje"], r["cobertura_sede"]), axis=1)
-    priority_df["Lectura sugerida"] = priority_df.apply(lambda r: socio_teacher_note(r["puntaje_sede"], r["brecha_puntaje"], r["cobertura_sede"]), axis=1)
 
     teacher_table = priority_df[[
         "Indicador", "puntaje_sede", "puntaje_red", "brecha_puntaje",
-        "favorable_sede", "cobertura_sede", "Semáforo", "Lectura sugerida"
+        "favorable_sede", "cobertura_sede", "Semáforo"
     ]].rename(columns={
         "puntaje_sede": f"Puntaje {focus_label}",
         "puntaje_red": "Puntaje red",
@@ -2514,17 +2512,27 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
         .drop_duplicates("TexQuestion")
     )
     qsum = qsum.merge(meta, on="TexQuestion", how="left")
-
     focus_stats = (
         ind_focus[ind_focus["Respuesta Reporte"].notna()]
         .groupby("TexQuestion", dropna=False)
         .agg(
             respuestas_sede=("Respuesta Reporte", "count"),
-            estudiantes_sede=("OrgDefinedId", pd.Series.nunique),
+            estudiantes_sede_calc=("OrgDefinedId", pd.Series.nunique),
         )
         .reset_index()
     )
-    qsum = qsum.merge(focus_stats, on="TexQuestion", how="left").fillna({"respuestas_sede": 0, "estudiantes_sede": 0})
+    qsum = qsum.merge(focus_stats, on="TexQuestion", how="left")
+
+    # Evita colisiones: socio_question_summary ya puede traer estudiantes_sede.
+    if "estudiantes_sede" not in qsum.columns and "estudiantes_sede_calc" in qsum.columns:
+        qsum["estudiantes_sede"] = qsum["estudiantes_sede_calc"]
+    elif "estudiantes_sede" in qsum.columns and "estudiantes_sede_calc" in qsum.columns:
+        qsum["estudiantes_sede"] = qsum["estudiantes_sede"].fillna(qsum["estudiantes_sede_calc"])
+
+    if "estudiantes_sede_calc" in qsum.columns:
+        qsum = qsum.drop(columns=["estudiantes_sede_calc"])
+
+    qsum = qsum.fillna({"respuestas_sede": 0, "estudiantes_sede": 0})
     qsum["respuestas_sede"] = qsum["respuestas_sede"].astype(int)
     qsum["estudiantes_sede"] = qsum["estudiantes_sede"].astype(int)
 
@@ -2546,22 +2554,18 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
     qsum = qsum.sort_values(["abs_delta", "brecha_puntaje", "cobertura_sede"], ascending=[False, True, True]).reset_index(drop=True)
 
     st.markdown("### Lectura rápida: qué se elige más y menos (vs red)")
-    quick_cols = [
-        "Pregunta corta", "Escala", "cobertura_sede",
-        "mas_opcion", "mas_delta", "menos_opcion", "menos_delta",
-        "respuestas_sede", "estudiantes_sede",
-    ]
+    st.caption("Para cada pregunta, se muestra la opción que la sede elige **más** y la que elige **menos** frente a la red (Δ en puntos porcentuales).")
+
+    quick_cols = ["Pregunta corta", "Escala", "mas_opcion", "mas_delta", "menos_opcion", "menos_delta"]
     quick = qsum[quick_cols].rename(columns={
-        "cobertura_sede": f"% cobertura {focus_label}",
         "mas_opcion": f"Opción más elegida en {focus_label} vs red",
         "mas_delta": "Δ más (pp)",
         "menos_opcion": f"Opción menos elegida en {focus_label} vs red",
         "menos_delta": "Δ menos (pp)",
-        "respuestas_sede": "Respuestas sede",
-        "estudiantes_sede": "Estudiantes sede",
     })
-    for col in [f"% cobertura {focus_label}"]:
-        quick[col] = quick[col].round(1)
+    for c in ["Δ más (pp)", "Δ menos (pp)"]:
+        if c in quick.columns:
+            quick[c] = pd.to_numeric(quick[c], errors="coerce").fillna(0).round(1)
     st.dataframe(quick, use_container_width=True, hide_index=True, height=360)
 
     # -------------------------

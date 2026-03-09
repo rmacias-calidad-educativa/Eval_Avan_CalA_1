@@ -2556,19 +2556,6 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
                 hide_index=True,
             )
 
-with st.expander("Chequeo rápido de calidad del dato", expanded=False):
-        low_cov = qsum[qsum["cobertura_sede"] < 80][["TexQuestion", "cobertura_sede", "puntaje_sede", "brecha_puntaje"]].rename(columns={
-            "TexQuestion": "Pregunta",
-            "cobertura_sede": f"% cobertura {focus_label}",
-            "puntaje_sede": f"Puntaje {focus_label}",
-            "brecha_puntaje": "Brecha vs red",
-        })
-        if low_cov.empty:
-            st.success("En este indicador no hay alertas fuertes de cobertura para la sede focal.")
-        else:
-            st.dataframe(low_cov, use_container_width=True, hide_index=True)
-
-
 def main() -> None:
     st.title("Evaluación Diagnóstica 2026 Calendario A")
     st.caption("Tablero pedagógico para contrastar la sede frente a la red y sumar una lectura socioemocional útil para docentes.")

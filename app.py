@@ -900,7 +900,7 @@ def prepare_data(raw: pd.DataFrame) -> pd.DataFrame:
     df["Grado Orden"] = df["Grado"].map(lambda x: grade_sort_key(x)[0])
     df["Curso Orden"] = df["Curso"].map(lambda x: course_sort_key(x)[0])
     df["Nivel Inglés"] = df.apply(
-        lambda r: extract_english_level(r.get("Competencia"), r.get("Pregunta"), r.get("Prueba")) if is_english_prueba(r.get("Prueba Base")) else np.nan,
+        lambda r: extract_english_level(r.get("Pregunta"), r.get("Prueba"), r.get("Prueba Base")) if is_english_prueba(r.get("Prueba Base")) else np.nan,
         axis=1,
     )
     return df
@@ -1641,97 +1641,164 @@ def render_english_level_lines(level_accuracy: pd.DataFrame, title: str, theme: 
 def render_english_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.DataFrame, focus_label: str) -> None:
     theme = get_theme_tokens()
 
-    red_acc = english_level_accuracy_by_grade(df_prueba)
-    sede_acc = english_level_accuracy_by_grade(focus_prueba)
-
-    if red_acc.empty:
-        st.warning(
-            "No encontré etiquetas de nivel (Pre A1, A1, A2, B1) dentro de la prueba de Inglés. "
-            "Revisa si esos niveles están en Competencia, Pregunta o Prueba."
-        )
-        return
-
+    # Nota: para Inglés NO usamos la columna "Competencia".
+    # El nivel (Pre A1, A2, A1, B1) se extrae de los textos de Pregunta/Prueba
+    # y luego se calcula un nivel de habilidad por estudiante con factores de crecimiento.
     red_skill = english_skill_by_student(df_prueba)
     sede_skill = english_skill_by_student(focus_prueba)
+
+    if red_skill.empty:
+        st.warning(
+            "No pude asignar niveles CEFR (Pre A1, A2, A1, B1) dentro de la prueba de Inglés usando los textos de Pregunta/Prueba. "
+            "Revisa que esos niveles aparezcan escritos allí para poder calcular el nivel por estudiante."
+        )
+        return
 
     red_idx = float(red_skill["indice_ponderado"].mean()) if not red_skill.empty else np.nan
     sede_idx = float(sede_skill["indice_ponderado"].mean()) if not sede_skill.empty else np.nan
     brecha = sede_idx - red_idx if pd.notna(red_idx) and pd.notna(sede_idx) else np.nan
 
-    sede_level_mean = float(sede_skill["nivel_continuo"].mean()) if not sede_skill.empty else np.nan
+    modal_red = english_modal_skill(red_skill)
+    modal_sede = english_modal_skill(sede_skill)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Índice ponderado (red)", f"{red_idx:.1f}" if pd.notna(red_idx) else "Sin dato")
-    c2.metric(f"Índice ponderado ({focus_label})", f"{sede_idx:.1f}" if pd.notna(sede_idx) else "Sin dato")
+    c1.metric("Índice de habilidad (red, 0-100)", f"{red_idx:.1f}" if pd.notna(red_idx) else "Sin dato")
+    c2.metric(f"Índice de habilidad ({focus_label}, 0-100)", f"{sede_idx:.1f}" if pd.notna(sede_idx) else "Sin dato")
     c3.metric("Brecha", f"{brecha:+.1f}" if pd.notna(brecha) else "Sin dato")
-    c4.metric(f"Nivel habilidad modal ({focus_label})", english_modal_skill(sede_skill))
+    c4.metric("Nivel modal", f"{modal_sede} ({focus_label}) | {modal_red} (red)")
 
-    st.markdown("**% de acierto por nivel (Pre A1, A1, A2, B1) dentro de cada grado**")
-    st.caption("Aquí no mostramos 'competencias'. Cada línea (o barra) es un nivel CEFR y el eje Y es % de acierto (0-100).")
+    st.markdown("### Inglés: nivel de habilidad por estudiante")
+    st.caption(
+        "Cada respuesta correcta se pondera por el factor del nivel del ítem: Pre A1=1, A2=2, A1=3, B1=4. "
+        "Luego se normaliza por el máximo posible del estudiante para obtener un índice 0-100 y un nivel continuo 0-4. "
+        "Finalmente se asigna el nivel discreto del estudiante."
+    )
 
+    def _grade_order(skill_df: pd.DataFrame) -> list[str]:
+        if skill_df.empty:
+            return []
+        tmp = (
+            skill_df[["Grado", "Grado Etiqueta"]]
+            .drop_duplicates()
+            .assign(_o=lambda d: d["Grado"].map(lambda x: grade_sort_key(x)[0]))
+            .sort_values(["_o", "Grado"])
+        )
+        return tmp["Grado Etiqueta"].tolist()
+
+    def _dist(skill_df: pd.DataFrame, scope: str) -> pd.DataFrame:
+        if skill_df.empty:
+            return pd.DataFrame(columns=["Alcance", "Grado Etiqueta", "Nivel habilidad", "estudiantes", "pct_estudiantes"])
+        dist = (
+            skill_df.groupby(["Grado Etiqueta", "Nivel habilidad"], dropna=False)["ID Estudiante"]
+            .nunique()
+            .reset_index(name="estudiantes")
+        )
+        dist["pct_estudiantes"] = dist["estudiantes"] / dist.groupby("Grado Etiqueta")["estudiantes"].transform("sum") * 100
+        dist["pct_estudiantes"] = dist["pct_estudiantes"].round(2)
+        dist["Alcance"] = scope
+        return dist
+
+    dist_sede = _dist(sede_skill, focus_label)
+    dist_red = _dist(red_skill, "Red")
+
+    grade_order = _grade_order(red_skill)
+    level_order = ["Pre A1", "A2", "A1", "B1"]
+
+    def _plot_dist(dist: pd.DataFrame, title: str) -> None:
+        if dist.empty:
+            st.info("No hay estudiantes clasificables con los filtros actuales.")
+            return
+        fig = px.bar(
+            dist,
+            x="Grado Etiqueta",
+            y="pct_estudiantes",
+            color="Nivel habilidad",
+            barmode="group",
+            title=title,
+            text="pct_estudiantes",
+            category_orders={"Nivel habilidad": level_order, "Grado Etiqueta": grade_order},
+        )
+        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig.update_layout(xaxis_title="Grado", yaxis_title="% de estudiantes", yaxis_range=[0, 100])
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("**Distribución de niveles por grado (comparación sede vs red)**")
     col1, col2 = st.columns(2)
     with col1:
-        if sede_acc.empty:
-            st.info(f"La sede {focus_label} no tiene respuestas clasificables en Inglés con los filtros actuales.")
-        else:
-            render_english_level_lines(sede_acc, f"{focus_label}: % acierto por grado y nivel", theme)
+        _plot_dist(dist_sede, f"{focus_label}: % de estudiantes por nivel")
     with col2:
-        render_english_level_lines(red_acc, "Red filtrada: % acierto por grado y nivel", theme)
+        _plot_dist(dist_red, "Red filtrada: % de estudiantes por nivel")
 
-    st.markdown("**Tabla: % de acierto por grado y nivel (0-100)**")
+    st.markdown("**Trayectoria del índice de habilidad (0-100) por grado: sede vs red**")
+
+    def _mean_by_grade(skill_df: pd.DataFrame, scope: str) -> pd.DataFrame:
+        if skill_df.empty:
+            return pd.DataFrame(columns=["Alcance", "Grado Etiqueta", "Indice"])
+        out = (
+            skill_df.groupby(["Grado", "Grado Etiqueta"], dropna=False)["indice_ponderado"]
+            .mean()
+            .reset_index(name="Indice")
+        )
+        out["orden"] = out["Grado"].map(lambda x: grade_sort_key(x)[0])
+        out["Alcance"] = scope
+        return out.sort_values(["orden", "Grado"]).drop(columns="orden")
+
+    mean_sede = _mean_by_grade(sede_skill, focus_label)
+    mean_red = _mean_by_grade(red_skill, "Red")
+    mean_all = pd.concat([mean_red, mean_sede], ignore_index=True)
+
+    if not mean_all.empty:
+        fig = px.line(
+            mean_all,
+            x="Grado Etiqueta",
+            y="Indice",
+            color="Alcance",
+            markers=True,
+            title="Índice de habilidad promedio por grado",
+            category_orders={"Grado Etiqueta": grade_order},
+            color_discrete_map={"Red": theme["muted"], focus_label: theme["primary"]},
+        )
+        fig.update_layout(xaxis_title="Grado", yaxis_title="Índice (0-100)", yaxis_range=[0, 100])
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("**Tabla: % de estudiantes por nivel (sede vs red)**")
+
+    def _pivot(dist: pd.DataFrame) -> pd.DataFrame:
+        if dist.empty:
+            return pd.DataFrame(columns=["Grado", *level_order])
+        piv = (
+            dist.pivot(index="Grado Etiqueta", columns="Nivel habilidad", values="pct_estudiantes")
+            .reindex(columns=level_order)
+            .fillna(0)
+            .round(2)
+            .reset_index()
+            .rename(columns={"Grado Etiqueta": "Grado"})
+        )
+        return piv
+
+    p_sede = _pivot(dist_sede)
+    p_red = _pivot(dist_red)
+
     t1, t2 = st.columns(2)
     with t1:
         st.markdown(f"**{focus_label}**")
-        st.dataframe(english_accuracy_pivot(sede_acc), use_container_width=True, hide_index=True)
+        st.dataframe(p_sede, use_container_width=True, hide_index=True)
     with t2:
         st.markdown("**Red filtrada**")
-        st.dataframe(english_accuracy_pivot(red_acc), use_container_width=True, hide_index=True)
+        st.dataframe(p_red, use_container_width=True, hide_index=True)
 
-    with st.expander("Nivel de habilidad por estudiante (ponderado)", expanded=False):
-        st.caption(
-            "Cada acierto se multiplica por el factor del nivel (Pre A1=1, A2=2, A1=3, B1=4). "
-            "Se normaliza por el máximo posible del estudiante y se reescala a un nivel 0-4; luego se asigna el nivel discreto."
-        )
+    # Diferencias por grado (sede - red)
+    if not p_sede.empty and not p_red.empty:
+        diff = p_sede.merge(p_red, on="Grado", how="outer", suffixes=(f" ({focus_label})", " (Red)")).fillna(0)
+        for lvl in level_order:
+            diff[f"Δ {lvl} (pp)"] = diff.get(f"{lvl} ({focus_label})", 0) - diff.get(f"{lvl} (Red)", 0)
+            diff[f"Δ {lvl} (pp)"] = diff[f"Δ {lvl} (pp)"].round(2)
 
-        if sede_skill.empty:
-            st.info("No hay estudiantes clasificables en la sede con los filtros actuales.")
-        else:
-            dist = (
-                sede_skill.groupby(["Grado Etiqueta", "Nivel habilidad"], dropna=False)["ID Estudiante"]
-                .nunique()
-                .reset_index(name="estudiantes")
-            )
-            dist["pct_estudiantes"] = dist["estudiantes"] / dist.groupby("Grado Etiqueta")["estudiantes"].transform("sum") * 100
-            dist["pct_estudiantes"] = dist["pct_estudiantes"].round(2)
-
-            fig = px.bar(
-                dist,
-                x="Grado Etiqueta",
-                y="pct_estudiantes",
-                color="Nivel habilidad",
-                barmode="group",
-                title=f"{focus_label}: % de estudiantes por nivel de habilidad",
-                category_orders={"Nivel habilidad": ["Pre A1", "A2", "A1", "B1"]},
-                text="pct_estudiantes",
-            )
-            fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
-            fig.update_layout(xaxis_title="Grado", yaxis_title="% de estudiantes", yaxis_range=[0, 100])
-            apply_accessible_figure_style(fig, theme)
-            st.plotly_chart(fig, use_container_width=True)
-
-            pivot = (
-                dist.pivot(index="Grado Etiqueta", columns="Nivel habilidad", values="pct_estudiantes")
-                .reindex(columns=["Pre A1", "A2", "A1", "B1"])
-                .fillna(0)
-                .round(2)
-                .reset_index()
-                .rename(columns={"Grado Etiqueta": "Grado"})
-            )
-            st.dataframe(pivot, use_container_width=True, hide_index=True)
-
-        if not sede_skill.empty:
-            st.markdown("**Promedio del nivel continuo (0-4)**")
-            st.write(f"{focus_label}: {sede_level_mean:.2f}" if pd.notna(sede_level_mean) else f"{focus_label}: Sin dato")
+        st.markdown("**Diferencia sede vs red (puntos porcentuales)**")
+        show_cols = ["Grado"] + [f"Δ {lvl} (pp)" for lvl in level_order]
+        st.dataframe(diff[show_cols], use_container_width=True, hide_index=True)
 
 
 def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.DataFrame, focus_label: str) -> None:

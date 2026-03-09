@@ -721,7 +721,7 @@ COMPETENCY_ORDER = [
 ]
 P_BIS_TARGET = 0.20
 D27_TARGET = 0.20
-ENGLISH_LEVEL_ORDER = ["Pre A1", "A1", "A2", "B1"]
+ENGLISH_LEVEL_ORDER = ["Pre A1", "A2", "A1", "B1"]
 ENGLISH_GROWTH_FACTORS = {"Pre A1": 1.0, "A2": 2.0, "A1": 3.0, "B1": 4.0}
 ENGLISH_LEVEL_FROM_NUM = {1: "Pre A1", 2: "A2", 3: "A1", 4: "B1"}
 
@@ -838,18 +838,30 @@ def is_english_prueba(value: str) -> bool:
 
 
 def extract_english_level(*values) -> str | float:
-    text = " ".join(strip_accents(str(v)).lower() for v in values if pd.notna(v))
-    text = re.sub(r"\s+", " ", text)
-    if re.search(r"\bpre\s*a1\b", text) or re.search(r"\bprea1\b", text):
-        return "Pre A1"
-    if re.search(r"\bb1\b", text):
-        return "B1"
-    if re.search(r"\ba2\b", text):
-        return "A2"
-    if re.search(r"\ba1\b", text):
-        return "A1"
-    return np.nan
+    """Extrae el nivel CEFR (Pre A1, A2, A1, B1) desde cualquier texto disponible.
 
+    Nota: en muchos exportes el nivel viene escrito en la columna *Competencia*,
+    pero aquí solo lo usamos para **identificar el nivel del ítem**, no para mostrar
+    competencias en el tablero.
+    """
+    text = " ".join(strip_accents(str(v)).lower() for v in values if pd.notna(v))
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return np.nan
+
+    # Variantes frecuentes: "Pre A1", "Pre-A1", "PreA1", "Pre_A1"
+    if re.search(r"\bpre\s*[-_]?\s*a\s*1\b", text) or re.search(r"\bprea1\b", text):
+        return "Pre A1"
+
+    # B1 / A2 / A1 con separadores opcionales (p.ej. "A 2", "B-1")
+    if re.search(r"\bb\s*[-_]?\s*1\b", text):
+        return "B1"
+    if re.search(r"\ba\s*[-_]?\s*2\b", text):
+        return "A2"
+    if re.search(r"\ba\s*[-_]?\s*1\b", text):
+        return "A1"
+
+    return np.nan
 
 def load_default_file_if_exists() -> Path | None:
     for path in DEFAULT_DATA_CANDIDATES:
@@ -900,7 +912,7 @@ def prepare_data(raw: pd.DataFrame) -> pd.DataFrame:
     df["Grado Orden"] = df["Grado"].map(lambda x: grade_sort_key(x)[0])
     df["Curso Orden"] = df["Curso"].map(lambda x: course_sort_key(x)[0])
     df["Nivel Inglés"] = df.apply(
-        lambda r: extract_english_level(r.get("Pregunta"), r.get("Prueba"), r.get("Prueba Base")) if is_english_prueba(r.get("Prueba Base")) else np.nan,
+        lambda r: extract_english_level(r.get("Competencia"), r.get("Pregunta"), r.get("Prueba"), r.get("Prueba Base")) if is_english_prueba(r.get("Prueba Base")) else np.nan,
         axis=1,
     )
     return df
@@ -1642,7 +1654,7 @@ def render_english_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prue
     theme = get_theme_tokens()
 
     # Nota: para Inglés NO usamos la columna "Competencia".
-    # El nivel (Pre A1, A2, A1, B1) se extrae de los textos de Pregunta/Prueba
+    # El nivel (Pre A1, A2, A1, B1) se extrae de los textos disponibles del ítem (p.ej. Competencia/Pregunta/Prueba)
     # y luego se calcula un nivel de habilidad por estudiante con factores de crecimiento.
     red_skill = english_skill_by_student(df_prueba)
     sede_skill = english_skill_by_student(focus_prueba)
@@ -2463,6 +2475,11 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
     m2.metric(f"Puntaje {focus_label}", f"{qrow['puntaje_sede']:.1f}" if pd.notna(qrow["puntaje_sede"]) else "Sin dato")
     m3.metric("Brecha", f"{qrow['brecha_puntaje']:+.1f} pp" if pd.notna(qrow["brecha_puntaje"]) else "Sin dato")
     m4.metric("Cobertura sede", f"{qrow['cobertura_sede']:.1f}%" if pd.notna(qrow["cobertura_sede"]) else "Sin dato")
+    o1, o2, o3, o4 = st.columns(4)
+    o1.metric("Opciones red", f"{int(qrow.get('Opciones red', 0)):,}")
+    o2.metric(f"Opciones {focus_label}", f"{int(qrow.get('Opciones sede', 0)):,}")
+    o3.metric("Respuestas red", f"{int(qrow.get('Respuestas red', 0)):,}")
+    o4.metric(f"Respuestas {focus_label}", f"{int(qrow.get('Respuestas sede', 0)):,}")
     st.markdown(f"**Pregunta:** {selected_question}")
 
     if selected_indicator == "Autoconciencia emocional":
@@ -2491,54 +2508,55 @@ def show_embedded_socioemocional_tab(academic_filtered: pd.DataFrame, focus_labe
                 st.plotly_chart(fig, use_container_width=True)
 
     else:
-        yes_no_table = socio_yes_no_summary(scoped, scoped_focus, focus_label, selected_indicator)
-        if not yes_no_table.empty:
-            st.markdown("**Conteo de respuestas Sí y No**")
-            st.dataframe(yes_no_table, use_container_width=True, hide_index=True)
+        # Distribución de opciones de respuesta (proporción dentro de la sede y dentro de la red)
+        st.markdown("**Distribución de opciones de respuesta (porcentaje dentro de cada grupo)**")
 
-            chart_yes_no = yes_no_table.melt(id_vars=["Pregunta", "Respuesta Reporte"], value_vars=["Conteo sede", "Conteo demás sedes"], var_name="Serie", value_name="Conteo")
-            chart_yes_no["Serie"] = chart_yes_no["Serie"].map({"Conteo sede": focus_label, "Conteo demás sedes": "Demás sedes"})
-            fig = px.bar(
-                chart_yes_no,
-                x="Respuesta Reporte",
-                y="Conteo",
-                color="Serie",
-                facet_row="Pregunta",
-                barmode="group",
-                title="Sí y No por pregunta",
-                color_discrete_map={focus_label: theme["primary"], "Demás sedes": theme["muted"]},
-            )
-            fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
-            fig.update_layout(xaxis_title="", yaxis_title="Cantidad de respuestas")
-            apply_accessible_figure_style(fig, theme)
-            st.plotly_chart(fig, use_container_width=True)
+        red_profile = socio_response_profile(scoped, selected_question).rename(columns={"pct": "Red"})
+        focus_profile = socio_response_profile(scoped_focus, selected_question).rename(columns={"pct": focus_label})
+
+        merged = red_profile.merge(focus_profile, on="Respuesta Reporte", how="outer").fillna(0)
+        if merged.empty:
+            st.info("No hay respuestas suficientes para construir la distribución en este filtro.")
         else:
-            red_profile = socio_response_profile(scoped, selected_question).rename(columns={"pct": "Red"})
-            focus_profile = socio_response_profile(scoped_focus, selected_question).rename(columns={"pct": focus_label})
-            merged = red_profile.merge(focus_profile, on="Respuesta Reporte", how="outer").fillna(0)
-            merged["Etiqueta"] = merged["Respuesta Reporte"].map(lambda x: socio_wrap_plot_label(x, width=24, max_lines=3))
-            merged["Pico"] = merged[["Red", focus_label]].max(axis=1)
-            merged = merged.sort_values("Pico", ascending=True)
+            merged["Δ (pp)"] = merged[focus_label] - merged["Red"]
 
-            fig = go.Figure()
-            fig.add_trace(go.Bar(y=merged["Etiqueta"], x=merged["Red"], name="Red", orientation="h", marker_color=theme["muted"]))
-            fig.add_trace(go.Bar(y=merged["Etiqueta"], x=merged[focus_label], name=focus_label, orientation="h", marker_color=theme["primary"]))
-            fig.update_layout(barmode="group", title="Cómo respondió la sede frente a la red", xaxis_title="% de estudiantes", yaxis_title="", height=max(360, 110 + 70 * len(merged)))
-            apply_accessible_figure_style(fig, theme)
-            st.plotly_chart(fig, use_container_width=True)
+            # Orden sugerido según tipo de escala (evita lecturas raras y mejora legibilidad)
+            scale_series = scoped.loc[scoped["TexQuestion"] == selected_question, "Escala"].dropna()
+            scale = str(scale_series.iloc[0]) if not scale_series.empty else None
+            order_map = {
+                "emotion": ["Alegría", "Rabia", "Tristeza", "Sorpresa"],
+                "yes_no": ["Sí", "No"],
+                "three_mucho": ["Ningún día", "Algunos días", "Muchos días"],
+                "three_mucho_literal": ["Nada", "Poco", "Mucho"],
+                "si_algunas_no": ["No", "Algunas veces", "Sí"],
+                "agree4": ["Muy en desacuerdo", "En desacuerdo", "De acuerdo", "Muy de acuerdo"],
+                "freq4": ["Nunca", "Pocas veces", "Muchas veces", "Siempre"],
+                "satisfaction3": ["Insatisfecho", "Me da igual", "Satisfecho"],
+                "learn_compare": [
+                    "Aprendo menos que cuando estaba en casa",
+                    "Aprendo igual que cuando estaba en casa",
+                    "Aprendo más que cuando estaba en casa",
+                ],
+            }
+            if scale in order_map:
+                merged = merged.set_index("Respuesta Reporte").reindex(order_map[scale]).fillna(0).reset_index()
 
-    teacher_question_table = qsum[["TexQuestion", "Opciones red", "Opciones sede", "Respuestas red", "Respuestas sede", "puntaje_sede", "puntaje_red", "brecha_puntaje", "cobertura_sede"]].rename(columns={
-        "TexQuestion": "Pregunta",
-        "Opciones sede": f"Opciones {focus_label}",
-        "Respuestas sede": f"Respuestas {focus_label}",
-        "puntaje_sede": f"Puntaje {focus_label}",
-        "puntaje_red": "Puntaje red",
-        "brecha_puntaje": "Brecha vs red",
-        "cobertura_sede": f"% cobertura {focus_label}",
-    })
-    st.dataframe(teacher_question_table, use_container_width=True, hide_index=True, height=260)
+            merged = merged.rename(columns={
+                "Respuesta Reporte": "Opción",
+                "Red": "Red (%)",
+                focus_label: f"{focus_label} (%)",
+            })
+            merged["Red (%)"] = merged["Red (%)"].round(2)
+            merged[f"{focus_label} (%)"] = merged[f"{focus_label} (%)"].round(2)
+            merged["Δ (pp)"] = merged["Δ (pp)"].round(2)
 
-    with st.expander("Chequeo rápido de calidad del dato", expanded=False):
+            st.dataframe(
+                merged[["Opción", "Red (%)", f"{focus_label} (%)", "Δ (pp)"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+with st.expander("Chequeo rápido de calidad del dato", expanded=False):
         low_cov = qsum[qsum["cobertura_sede"] < 80][["TexQuestion", "cobertura_sede", "puntaje_sede", "brecha_puntaje"]].rename(columns={
             "TexQuestion": "Pregunta",
             "cobertura_sede": f"% cobertura {focus_label}",

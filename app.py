@@ -1651,18 +1651,17 @@ def render_english_level_lines(level_accuracy: pd.DataFrame, title: str, theme: 
 
 
 def render_english_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.DataFrame, focus_label: str) -> None:
+
     theme = get_theme_tokens()
 
-    # Nota: para Inglés NO usamos la columna "Competencia".
-    # El nivel (Pre A1, A2, A1, B1) se extrae de los textos disponibles del ítem (p.ej. Competencia/Pregunta/Prueba)
-    # y luego se calcula un nivel de habilidad por estudiante con factores de crecimiento.
+    # Nivel de habilidad por estudiante (ponderado por nivel del ítem)
     red_skill = english_skill_by_student(df_prueba)
     sede_skill = english_skill_by_student(focus_prueba)
 
     if red_skill.empty:
         st.warning(
-            "No pude asignar niveles CEFR (Pre A1, A2, A1, B1) dentro de la prueba de Inglés usando los textos de Pregunta/Prueba. "
-            "Revisa que esos niveles aparezcan escritos allí para poder calcular el nivel por estudiante."
+            "No pude asignar niveles CEFR (Pre A1, A2, A1, B1) dentro de la prueba de Inglés. "
+            "Revisa que en los textos del instrumento aparezcan esas etiquetas para poder calcular el nivel por estudiante."
         )
         return
 
@@ -1670,20 +1669,21 @@ def render_english_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prue
     sede_idx = float(sede_skill["indice_ponderado"].mean()) if not sede_skill.empty else np.nan
     brecha = sede_idx - red_idx if pd.notna(red_idx) and pd.notna(sede_idx) else np.nan
 
-    modal_red = english_modal_skill(red_skill)
     modal_sede = english_modal_skill(sede_skill)
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Índice de habilidad (red, 0-100)", f"{red_idx:.1f}" if pd.notna(red_idx) else "Sin dato")
     c2.metric(f"Índice de habilidad ({focus_label}, 0-100)", f"{sede_idx:.1f}" if pd.notna(sede_idx) else "Sin dato")
-    c3.metric("Brecha", f"{brecha:+.1f}" if pd.notna(brecha) else "Sin dato")
-    c4.metric("Nivel modal", f"{modal_sede} ({focus_label}) | {modal_red} (red)")
+    c3.metric("Brecha (sede - red)", f"{brecha:+.1f}" if pd.notna(brecha) else "Sin dato")
+    c4.metric(f"Nivel modal ({focus_label})", modal_sede)
 
-    st.markdown("### Inglés: nivel de habilidad por estudiante")
-    st.caption(
-        "Cada respuesta correcta se pondera por el factor del nivel del ítem: Pre A1=1, A2=2, A1=3, B1=4. "
-        "Luego se normaliza por el máximo posible del estudiante para obtener un índice 0-100 y un nivel continuo 0-4. "
-        "Finalmente se asigna el nivel discreto del estudiante."
+    st.markdown("### Cómo leer Inglés (sin competencias)")
+    st.markdown(
+        """
+        - **Índice de habilidad (0-100):** cada respuesta correcta se pondera por el nivel del ítem (Pre A1=1, A2=2, A1=3, B1=4) y se normaliza por el máximo posible del estudiante.
+        - **Distribución por nivel:** muestra qué **% de estudiantes** del grado queda clasificado en cada nivel (cada grado suma 100%).
+        - **Brecha (pp):** diferencia en puntos porcentuales **(sede - red)** por nivel y grado. Valores positivos = la sede tiene más estudiantes en ese nivel; negativos = menos.
+        """
     )
 
     def _grade_order(skill_df: pd.DataFrame) -> list[str]:
@@ -1710,39 +1710,11 @@ def render_english_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prue
         dist["Alcance"] = scope
         return dist
 
-    dist_sede = _dist(sede_skill, focus_label)
-    dist_red = _dist(red_skill, "Red")
-
     grade_order = _grade_order(red_skill)
     level_order = ["Pre A1", "A2", "A1", "B1"]
 
-    def _plot_dist(dist: pd.DataFrame, title: str) -> None:
-        if dist.empty:
-            st.info("No hay estudiantes clasificables con los filtros actuales.")
-            return
-        fig = px.bar(
-            dist,
-            x="Grado Etiqueta",
-            y="pct_estudiantes",
-            color="Nivel habilidad",
-            barmode="group",
-            title=title,
-            text="pct_estudiantes",
-            category_orders={"Nivel habilidad": level_order, "Grado Etiqueta": grade_order},
-        )
-        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
-        fig.update_layout(xaxis_title="Grado", yaxis_title="% de estudiantes", yaxis_range=[0, 100])
-        apply_accessible_figure_style(fig, theme)
-        st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("**Distribución de niveles por grado (comparación sede vs red)**")
-    col1, col2 = st.columns(2)
-    with col1:
-        _plot_dist(dist_sede, f"{focus_label}: % de estudiantes por nivel")
-    with col2:
-        _plot_dist(dist_red, "Red filtrada: % de estudiantes por nivel")
-
-    st.markdown("**Trayectoria del índice de habilidad (0-100) por grado: sede vs red**")
+    # 1) Primero: índice promedio por grado (para ver brecha mejor)
+    st.markdown("**Índice de habilidad promedio por grado (sede vs red)**")
 
     def _mean_by_grade(skill_df: pd.DataFrame, scope: str) -> pd.DataFrame:
         if skill_df.empty:
@@ -1771,11 +1743,47 @@ def render_english_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prue
             category_orders={"Grado Etiqueta": grade_order},
             color_discrete_map={"Red": theme["muted"], focus_label: theme["primary"]},
         )
-        fig.update_layout(xaxis_title="Grado", yaxis_title="Índice (0-100)", yaxis_range=[0, 100])
+        fig.update_layout(
+            xaxis_title="Grado",
+            yaxis_title="Índice (0-100)",
+            yaxis_range=[50, 100],  # <- para ver mejor la brecha
+        )
         apply_accessible_figure_style(fig, theme)
         st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("**Tabla: % de estudiantes por nivel (sede vs red)**")
+    # 2) Distribución de niveles (sede vs red)
+    st.markdown("**Distribución de niveles por grado (sede vs red)**")
+
+    dist_sede = _dist(sede_skill, focus_label)
+    dist_red = _dist(red_skill, "Red")
+
+    def _plot_dist(dist: pd.DataFrame, title: str) -> None:
+        if dist.empty:
+            st.info("No hay estudiantes clasificables con los filtros actuales.")
+            return
+        fig = px.bar(
+            dist,
+            x="Grado Etiqueta",
+            y="pct_estudiantes",
+            color="Nivel habilidad",
+            barmode="group",
+            title=title,
+            text="pct_estudiantes",
+            category_orders={"Nivel habilidad": level_order, "Grado Etiqueta": grade_order},
+        )
+        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig.update_layout(xaxis_title="Grado", yaxis_title="% de estudiantes", yaxis_range=[0, 100])
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        _plot_dist(dist_sede, f"{focus_label}: % de estudiantes por nivel")
+    with col2:
+        _plot_dist(dist_red, "Red filtrada: % de estudiantes por nivel")
+
+    # 3) Solo diferencias: gráfico + (opcional) tabla de diferencias
+    st.markdown("**Brecha de distribución por nivel (sede - red, pp)**")
 
     def _pivot(dist: pd.DataFrame) -> pd.DataFrame:
         if dist.empty:
@@ -1783,34 +1791,41 @@ def render_english_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prue
         piv = (
             dist.pivot(index="Grado Etiqueta", columns="Nivel habilidad", values="pct_estudiantes")
             .reindex(columns=level_order)
-            .fillna(0)
+            .fillna(0.0)
             .round(2)
-            .reset_index()
-            .rename(columns={"Grado Etiqueta": "Grado"})
         )
         return piv
 
     p_sede = _pivot(dist_sede)
     p_red = _pivot(dist_red)
 
-    t1, t2 = st.columns(2)
-    with t1:
-        st.markdown(f"**{focus_label}**")
-        st.dataframe(p_sede, use_container_width=True, hide_index=True)
-    with t2:
-        st.markdown("**Red filtrada**")
-        st.dataframe(p_red, use_container_width=True, hide_index=True)
-
-    # Diferencias por grado (sede - red)
     if not p_sede.empty and not p_red.empty:
-        diff = p_sede.merge(p_red, on="Grado", how="outer", suffixes=(f" ({focus_label})", " (Red)")).fillna(0)
-        for lvl in level_order:
-            diff[f"Δ {lvl} (pp)"] = diff.get(f"{lvl} ({focus_label})", 0) - diff.get(f"{lvl} (Red)", 0)
-            diff[f"Δ {lvl} (pp)"] = diff[f"Δ {lvl} (pp)"].round(2)
+        all_grades = sorted(set(p_sede.index.tolist()) | set(p_red.index.tolist()), key=lambda x: grade_sort_key(x)[0])
+        delta = p_sede.reindex(index=all_grades, columns=level_order).fillna(0.0) - p_red.reindex(index=all_grades, columns=level_order).fillna(0.0)
+        delta = delta.round(2)
 
-        st.markdown("**Diferencia sede vs red (puntos porcentuales)**")
-        show_cols = ["Grado"] + [f"Δ {lvl} (pp)" for lvl in level_order]
-        st.dataframe(diff[show_cols], use_container_width=True, hide_index=True)
+        zmax = float(np.nanmax(np.abs(delta.to_numpy()))) if delta.size else 0.0
+        zmax = max(1.0, zmax)
+
+        fig = px.imshow(
+            delta,
+            text_auto=".1f",
+            aspect="auto",
+            color_continuous_scale="RdBu",
+            zmin=-zmax,
+            zmax=zmax,
+            title="Mapa de brechas (pp): positivo = sede por encima",
+        )
+        fig.update_layout(xaxis_title="Nivel", yaxis_title="Grado", coloraxis_colorbar_title="pp")
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+        with st.expander("Tabla de diferencias (pp)", expanded=False):
+            delta_table = delta.reset_index().rename(columns={"index": "Grado"})
+            # renombrar columnas para dejar claro que son pp
+            delta_table = delta_table.rename(columns={lvl: f"Δ {lvl} (pp)" for lvl in level_order})
+            st.dataframe(delta_table, use_container_width=True, hide_index=True)
+
 
 
 def render_prueba_panel(prueba: str, df_prueba: pd.DataFrame, focus_prueba: pd.DataFrame, focus_label: str) -> None:

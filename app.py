@@ -3264,6 +3264,7 @@ def main() -> None:
     tabs = st.tabs([
         "Mapa general de la red",
         "Tablero directivo",
+        "Comparativo por área",
         "Competencias por grado",
         "Detalle por prueba",
         "Análisis de las respuestas",
@@ -3276,14 +3277,16 @@ def main() -> None:
     with tabs[1]:
         show_overview_tab(filtered, focus_df, focus_label)
     with tabs[2]:
-        show_grade_competencies_tab(filtered, focus_label)
+        show_area_comparison_tab(filtered, focus_label)
     with tabs[3]:
-        show_pruebas_tab(filtered, focus_df, focus_label)
+        show_grade_competencies_tab(filtered, focus_label)
     with tabs[4]:
-        show_psychometrics_tab(filtered, focus_df, focus_label)
+        show_pruebas_tab(filtered, focus_df, focus_label)
     with tabs[5]:
-        show_antiguedad_tab(filtered, focus_df, focus_label)
+        show_psychometrics_tab(filtered, focus_df, focus_label)
     with tabs[6]:
+        show_antiguedad_tab(filtered, focus_df, focus_label)
+    with tabs[7]:
         show_embedded_socioemocional_tab(filtered, focus_label)
 
 if __name__ == "__main__":

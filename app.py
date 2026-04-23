@@ -1056,7 +1056,300 @@ def show_area_comparison_tab(df: pd.DataFrame, focus_label: str) -> None:
             use_container_width=True,
             hide_index=True,
         )
-        
+# =========================================================
+# NUEVA PESTAÑA: COMPETENCIAS POR GRADO
+# =========================================================
+
+def build_grade_competency_frame(df_scope: pd.DataFrame) -> pd.DataFrame:
+    work = df_scope.copy()
+    work = work[
+        work["Competencia"].notna()
+        & work["Grado"].notna()
+        & work["Acierto"].notna()
+    ].copy()
+
+    if work.empty:
+        return pd.DataFrame(columns=[
+            "Grado", "Grado Etiqueta", "Grado Orden", "Competencia",
+            "pct", "estudiantes", "respuestas"
+        ])
+
+    out = (
+        work.groupby(["Grado", "Competencia"], dropna=False)
+        .agg(
+            pct=("Acierto", lambda s: float(s.mean() * 100)),
+            estudiantes=("ID Estudiante", "nunique"),
+            respuestas=("Acierto", "size"),
+        )
+        .reset_index()
+    )
+
+    out["pct"] = out["pct"].round(2)
+    out["Grado Etiqueta"] = out["Grado"].map(grade_display_label)
+    out["Grado Orden"] = out["Grado"].map(lambda x: grade_sort_key(x)[0])
+    out["Comp Orden"] = out["Competencia"].map(lambda x: competency_sort_key(x)[0])
+
+    return out.sort_values(["Grado Orden", "Comp Orden", "Competencia"]).reset_index(drop=True)
+
+
+def build_grade_competency_heatmap(df_scope: pd.DataFrame) -> pd.DataFrame:
+    frame = build_grade_competency_frame(df_scope)
+    if frame.empty:
+        return pd.DataFrame()
+
+    heat = frame.pivot(index="Grado Etiqueta", columns="Competencia", values="pct")
+
+    grade_order = (
+        frame[["Grado Etiqueta", "Grado Orden"]]
+        .drop_duplicates()
+        .sort_values(["Grado Orden", "Grado Etiqueta"])
+    )["Grado Etiqueta"].tolist()
+
+    comp_order = (
+        frame[["Competencia", "Comp Orden"]]
+        .drop_duplicates()
+        .sort_values(["Comp Orden", "Competencia"])
+    )["Competencia"].tolist()
+
+    heat = heat.reindex(index=grade_order, columns=comp_order)
+    return heat
+
+
+def build_grade_competency_priority_table(
+    df_scope: pd.DataFrame,
+    benchmark_df: pd.DataFrame | None = None,
+    top_n: int = 3,
+) -> pd.DataFrame:
+    selected = build_grade_competency_frame(df_scope)
+    if selected.empty:
+        return pd.DataFrame(columns=["Grado", "Competencias a desarrollar"])
+
+    if benchmark_df is None:
+        rows = []
+        for grado, g in selected.groupby("Grado Etiqueta", dropna=False):
+            g = g.sort_values(["pct", "Competencia"], ascending=[True, True]).head(top_n)
+            texto = " · ".join(
+                [f"{r.Competencia} ({r.pct:.1f}%)" for r in g.itertuples()]
+            )
+            rows.append({
+                "Grado": grado,
+                "Competencias a desarrollar": texto if texto else "Sin dato"
+            })
+        return pd.DataFrame(rows)
+
+    red = build_grade_competency_frame(benchmark_df).rename(columns={"pct": "pct_red"})
+    merged = selected.merge(
+        red[["Grado", "Competencia", "pct_red"]],
+        on=["Grado", "Competencia"],
+        how="left"
+    )
+    merged["brecha_pp"] = (merged["pct"] - merged["pct_red"]).round(2)
+
+    rows = []
+    for grado, g in merged.groupby("Grado Etiqueta", dropna=False):
+        g = g.sort_values(["brecha_pp", "pct", "Competencia"], ascending=[True, True, True]).head(top_n)
+        texto = " · ".join(
+            [f"{r.Competencia} ({r.pct:.1f}%, Δ {r.brecha_pp:+.1f} pp)" for r in g.itertuples()]
+        )
+        rows.append({
+            "Grado": grado,
+            "Competencias a desarrollar": texto if texto else "Sin dato"
+        })
+    return pd.DataFrame(rows)
+
+
+def build_school_vs_network_competency_delta(
+    df_school: pd.DataFrame,
+    df_network: pd.DataFrame,
+) -> pd.DataFrame:
+    school = build_grade_competency_frame(df_school).rename(columns={"pct": "pct_school"})
+    red = build_grade_competency_frame(df_network).rename(columns={"pct": "pct_red"})
+
+    if school.empty or red.empty:
+        return pd.DataFrame()
+
+    merged = school.merge(
+        red[["Grado", "Competencia", "pct_red"]],
+        on=["Grado", "Competencia"],
+        how="left"
+    )
+    merged["delta_pp"] = (merged["pct_school"] - merged["pct_red"]).round(2)
+
+    pivot = merged.pivot(index="Grado Etiqueta", columns="Competencia", values="delta_pp")
+
+    grade_order = (
+        merged[["Grado Etiqueta", "Grado Orden"]]
+        .drop_duplicates()
+        .sort_values(["Grado Orden", "Grado Etiqueta"])
+    )["Grado Etiqueta"].tolist()
+
+    comp_order = (
+        merged[["Competencia", "Comp Orden"]]
+        .drop_duplicates()
+        .sort_values(["Comp Orden", "Competencia"])
+    )["Competencia"].tolist()
+
+    pivot = pivot.reindex(index=grade_order, columns=comp_order)
+    return pivot
+
+
+def show_grade_competencies_tab(df: pd.DataFrame, focus_label: str) -> None:
+    theme = get_theme_tokens()
+
+    st.subheader("Competencias a desarrollar por grado")
+    with st.expander("Cómo leer esta pestaña", expanded=False):
+        st.markdown(
+            """
+            - Esta vista organiza las **competencias por grado**, no por colegio.
+            - Primero puedes ver la **red completa** y luego bajar a un **colegio específico**.
+            - La priorización pedagógica parte de las competencias con **menor rendimiento**.
+            - En modo colegio, la prioridad se ordena por lo que queda **más por debajo de la red**.
+            - Esta pestaña excluye **Inglés**, porque ese análisis en tu tablero ya funciona por niveles CEFR.
+            """
+        )
+
+    # Excluir Inglés para no mezclar competencias con niveles
+    academic_df = df[~df["Prueba Base"].map(is_english_prueba)].copy()
+
+    areas = sorted(academic_df["Prueba Base"].dropna().unique().tolist())
+    if not areas:
+        st.info("No hay áreas académicas disponibles con el filtro actual.")
+        return
+
+    ctop1, ctop2 = st.columns([1.2, 1])
+    with ctop1:
+        selected_area = st.selectbox("Área", areas)
+    with ctop2:
+        mode = st.radio("Vista", ["Red completa", "Por colegio"], horizontal=True)
+
+    df_area = academic_df[academic_df["Prueba Base"] == selected_area].copy()
+    if df_area.empty:
+        st.warning("No hay datos para esta área con el filtro actual.")
+        return
+
+    selected_school_label = None
+    df_scope = df_area.copy()
+
+    if mode == "Por colegio":
+        school_options = sorted(df_area["Sede Corta"].dropna().unique().tolist())
+        if not school_options:
+            st.warning("No encontré colegios disponibles en esta área.")
+            return
+
+        default_idx = school_options.index(focus_label) if focus_label in school_options else 0
+        selected_school_label = st.selectbox("Colegio", school_options, index=default_idx)
+        df_scope = df_area[df_area["Sede Corta"] == selected_school_label].copy()
+
+        if df_scope.empty:
+            st.warning("No hay datos para ese colegio en el área seleccionada.")
+            return
+
+    # KPIs
+    overall_pct = float(df_scope["Acierto"].mean() * 100) if not df_scope.empty else np.nan
+    total_grades = int(df_scope["Grado"].dropna().nunique()) if not df_scope.empty else 0
+    total_comp = int(df_scope["Competencia"].dropna().nunique()) if not df_scope.empty else 0
+    total_students = int(df_scope["ID Estudiante"].dropna().nunique()) if not df_scope.empty else 0
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        render_theme_metric_card(
+            "Área analizada",
+            str(selected_area),
+            "Competencias agrupadas por grado",
+            theme,
+        )
+    with k2:
+        render_theme_metric_card(
+            "Rendimiento promedio",
+            f"{overall_pct:.1f}%" if pd.notna(overall_pct) else "Sin dato",
+            "Con los filtros activos",
+            theme,
+        )
+    with k3:
+        render_theme_metric_card(
+            "Grados visibles",
+            str(total_grades),
+            "Con evidencia disponible",
+            theme,
+        )
+    with k4:
+        render_theme_metric_card(
+            "Competencias visibles",
+            str(total_comp),
+            f"Estudiantes únicos: {total_students:,}",
+            theme,
+        )
+
+    # Heatmap principal
+    st.markdown("**Mapa de competencias por grado**")
+    heat = build_grade_competency_heatmap(df_scope)
+
+    if heat.empty:
+        st.info("No fue posible construir el mapa de competencias por grado.")
+    else:
+        fig = px.imshow(
+            heat,
+            text_auto=".1f",
+            aspect="auto",
+            color_continuous_scale=theme["heat_scale"],
+            title=(
+                f"{selected_area}: red completa"
+                if mode == "Red completa"
+                else f"{selected_area}: {selected_school_label}"
+            ),
+        )
+        fig.update_layout(
+            xaxis_title="Competencia",
+            yaxis_title="Grado",
+            coloraxis_colorbar_title="%"
+        )
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Tabla de prioridades
+    st.markdown("**Competencias priorizadas para desarrollar**")
+    if mode == "Red completa":
+        priority = build_grade_competency_priority_table(df_scope, benchmark_df=None, top_n=3)
+    else:
+        priority = build_grade_competency_priority_table(df_scope, benchmark_df=df_area, top_n=3)
+
+    st.dataframe(priority, use_container_width=True, hide_index=True)
+
+    # Vista adicional para colegio
+    if mode == "Por colegio":
+        st.markdown("**Brecha del colegio frente a la red**")
+        delta = build_school_vs_network_competency_delta(df_scope, df_area)
+
+        if delta.empty:
+            st.info("No fue posible calcular la brecha frente a la red.")
+        else:
+            zmax = float(np.nanmax(np.abs(delta.to_numpy()))) if delta.size else 0.0
+            zmax = max(1.0, zmax)
+
+            fig = px.imshow(
+                delta,
+                text_auto=".1f",
+                aspect="auto",
+                color_continuous_scale="RdBu",
+                zmin=-zmax,
+                zmax=zmax,
+                title=f"Brecha por grado y competencia: {selected_school_label} vs red",
+            )
+            fig.update_layout(
+                xaxis_title="Competencia",
+                yaxis_title="Grado",
+                coloraxis_colorbar_title="pp"
+            )
+            apply_accessible_figure_style(fig, theme)
+            st.plotly_chart(fig, use_container_width=True)
+
+            with st.expander("Ver tabla de brechas (pp)", expanded=False):
+                st.dataframe(
+                    delta.reset_index().rename(columns={"index": "Grado"}),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                
 # =========================
 # ACADÉMICO
 # =========================
@@ -2971,7 +3264,7 @@ def main() -> None:
     tabs = st.tabs([
         "Mapa general de la red",
         "Tablero directivo",
-        "Comparativo por área",
+        "Competencias por grado",
         "Detalle por prueba",
         "Análisis de las respuestas",
         "Análisis de antigüedad del estudiante",
@@ -2983,7 +3276,7 @@ def main() -> None:
     with tabs[1]:
         show_overview_tab(filtered, focus_df, focus_label)
     with tabs[2]:
-        show_area_comparison_tab(filtered, focus_label)
+        show_grade_competencies_tab(filtered, focus_label)
     with tabs[3]:
         show_pruebas_tab(filtered, focus_df, focus_label)
     with tabs[4]:

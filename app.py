@@ -681,7 +681,382 @@ def socio_emotion_confusion_matrix(frame: pd.DataFrame) -> pd.DataFrame:
     )
     return out.astype(int)
 
+# =========================================================
+# MÓDULO NUEVO: COMPARATIVO POR ÁREA
+# =========================================================
 
+def area_norm(value: str) -> str:
+    return strip_accents(str(value)).lower().strip()
+
+
+def expected_grade_numbers_for_area(area: str) -> list[int]:
+    key = area_norm(area)
+
+    if "social" in key:
+        return list(range(5, 12))          # Sociales 5° a 11°
+    if "ingles" in key or "english" in key:
+        return [9, 10, 11]                 # Inglés 9° a 11°
+    if "ciencia" in key and "social" not in key:
+        return list(range(5, 12))          # Ciencias 5° a 11°
+    if "mat" in key:
+        return list(range(3, 12))          # Matemáticas 3° a 11°
+    if "leng" in key or "lect" in key or "comunic" in key:
+        return list(range(3, 12))          # Lengua/Lenguaje 3° a 11°
+
+    # fallback: usar lo observado si el nombre del área viene diferente
+    return []
+
+
+def expected_grade_labels_for_area(area: str) -> list[str]:
+    nums = expected_grade_numbers_for_area(area)
+    return [f"{g}°" for g in nums]
+
+
+def area_scope_text(area: str, observed_grade_labels: list[str]) -> str:
+    expected = expected_grade_labels_for_area(area)
+    expected_txt = ", ".join(expected) if expected else "según los grados observados en la base"
+    observed_txt = ", ".join(observed_grade_labels) if observed_grade_labels else "sin datos"
+    return (
+        f"**Cobertura esperada del área:** {expected_txt}.  \n"
+        f"**Vista actual con filtros:** {observed_txt}.  \n"
+        f"Las celdas vacías significan **no evaluado** o **excluido por filtros**, no bajo desempeño."
+    )
+
+
+def build_area_school_ranking(df_area: pd.DataFrame) -> pd.DataFrame:
+    if df_area.empty:
+        return pd.DataFrame(columns=["Sede", "Sede Corta", "Rendimiento", "Estudiantes", "Respuestas"])
+
+    out = (
+        df_area.groupby(["Sede", "Sede Corta"], dropna=False)
+        .agg(
+            Rendimiento=("Acierto", lambda s: float(s.mean() * 100)),
+            Estudiantes=("ID Estudiante", "nunique"),
+            Respuestas=("Acierto", "size"),
+        )
+        .reset_index()
+        .sort_values("Rendimiento", ascending=False)
+    )
+    out["Rendimiento"] = out["Rendimiento"].round(2)
+    return out
+
+
+def build_area_grade_ranking(df_area: pd.DataFrame) -> pd.DataFrame:
+    if df_area.empty:
+        return pd.DataFrame(columns=["Grado", "Grado Etiqueta", "Rendimiento"])
+
+    out = (
+        df_area.groupby("Grado", dropna=False)
+        .agg(Rendimiento=("Acierto", lambda s: float(s.mean() * 100)))
+        .reset_index()
+    )
+    out["orden"] = out["Grado"].map(lambda x: grade_sort_key(x)[0])
+    out["Grado Etiqueta"] = out["Grado"].map(grade_display_label)
+    out["Rendimiento"] = out["Rendimiento"].round(2)
+    return out.sort_values(["orden", "Grado"]).drop(columns="orden")
+
+
+def build_area_school_grade_heatmap(df_area: pd.DataFrame, area: str, school_order: list[str]) -> pd.DataFrame:
+    if df_area.empty:
+        return pd.DataFrame()
+
+    heat = (
+        df_area.groupby(["Sede Corta", "Grado"], dropna=False)["Acierto"]
+        .mean()
+        .mul(100)
+        .round(1)
+        .reset_index(name="Rendimiento")
+    )
+    heat["Grado Etiqueta"] = heat["Grado"].map(grade_display_label)
+
+    observed = (
+        heat[["Grado", "Grado Etiqueta"]]
+        .drop_duplicates()
+        .assign(_o=lambda d: d["Grado"].map(lambda x: grade_sort_key(x)[0]))
+        .sort_values(["_o", "Grado"])
+    )["Grado Etiqueta"].tolist()
+
+    expected = expected_grade_labels_for_area(area)
+    cols = expected if expected else observed
+
+    heat = heat.pivot(index="Sede Corta", columns="Grado Etiqueta", values="Rendimiento")
+    heat = heat.reindex(index=school_order)
+    heat = heat.reindex(columns=cols)
+    return heat
+
+
+def build_competency_heatmap(df_area: pd.DataFrame, school_order: list[str]) -> pd.DataFrame:
+    comp = df_area.dropna(subset=["Competencia"]).copy()
+    if comp.empty:
+        return pd.DataFrame()
+
+    comp = (
+        comp.groupby(["Sede Corta", "Competencia"], dropna=False)["Acierto"]
+        .mean()
+        .mul(100)
+        .round(1)
+        .reset_index(name="Rendimiento")
+    )
+    comp["orden"] = comp["Competencia"].map(lambda x: competency_sort_key(x)[0])
+    comp = comp.sort_values(["orden", "Competencia"]).drop(columns="orden")
+
+    heat = comp.pivot(index="Sede Corta", columns="Competencia", values="Rendimiento")
+    heat = heat.reindex(index=school_order)
+    return heat
+
+
+def build_school_competency_summary(df_area: pd.DataFrame) -> pd.DataFrame:
+    comp = df_area.dropna(subset=["Competencia"]).copy()
+    if comp.empty:
+        return pd.DataFrame(columns=["Sede", "Competencias más fuertes", "Competencias por reforzar"])
+
+    comp = (
+        comp.groupby(["Sede Corta", "Competencia"], dropna=False)["Acierto"]
+        .mean()
+        .mul(100)
+        .reset_index(name="Rendimiento")
+    )
+
+    rows = []
+    for sede, g in comp.groupby("Sede Corta", dropna=False):
+        g_desc = g.sort_values("Rendimiento", ascending=False).reset_index(drop=True)
+        g_asc = g.sort_values("Rendimiento", ascending=True).reset_index(drop=True)
+
+        fuertes = " · ".join(g_desc.head(2)["Competencia"].astype(str).tolist())
+        debiles = " · ".join(g_asc.head(2)["Competencia"].astype(str).tolist())
+
+        rows.append({
+            "Sede": sede,
+            "Competencias más fuertes": fuertes if fuertes else "Sin dato",
+            "Competencias por reforzar": debiles if debiles else "Sin dato",
+        })
+
+    return pd.DataFrame(rows).sort_values("Sede")
+
+
+def build_english_school_summary(df_area: pd.DataFrame) -> pd.DataFrame:
+    skill = english_skill_by_student(df_area)
+    if skill.empty:
+        return pd.DataFrame(columns=["Sede", "Índice promedio", "Nivel modal", "Estudiantes"])
+
+    summary = (
+        skill.groupby("Sede Corta", dropna=False)
+        .agg(
+            **{
+                "Índice promedio": ("indice_ponderado", "mean"),
+                "Estudiantes": ("ID Estudiante", "nunique"),
+            }
+        )
+        .reset_index()
+        .rename(columns={"Sede Corta": "Sede"})
+    )
+
+    modal = (
+        skill.groupby("Sede Corta", dropna=False)["Nivel habilidad"]
+        .agg(lambda s: s.dropna().mode().iloc[0] if not s.dropna().empty else "Sin dato")
+        .reset_index()
+        .rename(columns={"Sede Corta": "Sede", "Nivel habilidad": "Nivel modal"})
+    )
+
+    summary = summary.merge(modal, on="Sede", how="left")
+    summary["Índice promedio"] = summary["Índice promedio"].round(2)
+    return summary.sort_values("Índice promedio", ascending=False)
+
+
+def show_area_comparison_tab(df: pd.DataFrame, focus_label: str) -> None:
+    theme = get_theme_tokens()
+    st.subheader("Comparativo por área")
+
+    with st.expander("Cómo leer esta pestaña", expanded=False):
+        st.markdown(
+            """
+            - Esta vista compara **todos los colegios** dentro de un área.
+            - El foco no es Colombia vs sede, sino **colegio vs colegio** y **grado vs grado**.
+            - Los vacíos en los mapas no deben leerse como cero: significan **grado no evaluado** o **filtro sin datos**.
+            - En **Inglés** la lectura se hace por **índice y nivel CEFR**, no por competencias.
+            """
+        )
+
+    areas = sorted(df["Prueba Base"].dropna().unique().tolist())
+    if not areas:
+        st.info("No hay áreas disponibles con el filtro actual.")
+        return
+
+    selected_area = st.selectbox("Área", areas)
+    df_area = df[df["Prueba Base"] == selected_area].copy()
+
+    if df_area.empty:
+        st.warning("No hay datos para esta área con los filtros actuales.")
+        return
+
+    by_school = build_area_school_ranking(df_area)
+    by_grade = build_area_grade_ranking(df_area)
+
+    school_order = by_school["Sede Corta"].tolist()
+    observed_grade_labels = by_grade["Grado Etiqueta"].tolist()
+
+    st.info(area_scope_text(selected_area, observed_grade_labels))
+
+    area_avg = float(df_area["Acierto"].mean() * 100) if not df_area.empty else np.nan
+    best_school = by_school.iloc[0] if not by_school.empty else None
+    worst_grade = by_grade.sort_values("Rendimiento", ascending=True).head(1)
+    visible_grades = len(observed_grade_labels)
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        render_theme_metric_card(
+            "Promedio del área",
+            f"{area_avg:.1f}%" if pd.notna(area_avg) else "Sin dato",
+            f"Área seleccionada: {selected_area}",
+            theme,
+        )
+    with c2:
+        render_theme_metric_card(
+            "Mejor colegio",
+            str(best_school["Sede Corta"]) if best_school is not None else "Sin dato",
+            f"{best_school['Rendimiento']:.1f}%" if best_school is not None else "Sin dato",
+            theme,
+        )
+    with c3:
+        render_theme_metric_card(
+            "Grado más bajo",
+            worst_grade.iloc[0]["Grado Etiqueta"] if not worst_grade.empty else "Sin dato",
+            f"{worst_grade.iloc[0]['Rendimiento']:.1f}%" if not worst_grade.empty else "Sin dato",
+            theme,
+        )
+    with c4:
+        render_theme_metric_card(
+            "Grados visibles",
+            str(visible_grades),
+            ", ".join(observed_grade_labels) if observed_grade_labels else "Sin datos",
+            theme,
+        )
+
+    st.markdown("**Lectura ejecutiva**")
+    weak_grades_txt = ", ".join(
+        by_grade.sort_values("Rendimiento", ascending=True).head(3)["Grado Etiqueta"].tolist()
+    ) if not by_grade.empty else "Sin dato"
+
+    st.markdown(
+        f"En **{selected_area}**, el mejor desempeño lo tiene **{best_school['Sede Corta']}** "
+        f"con **{best_school['Rendimiento']:.1f}%**. "
+        f"Los grados que aparecen más bajos en esta vista son **{weak_grades_txt}**. "
+        f"Los vacíos del mapa significan **no evaluado** o **filtrado**, no cero."
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        rank_plot = by_school.copy()
+        rank_plot["Destacado"] = np.where(
+            rank_plot["Sede Corta"] == focus_label, focus_label, "Otras sedes"
+        )
+
+        fig = px.bar(
+            rank_plot,
+            x="Sede Corta",
+            y="Rendimiento",
+            color="Destacado",
+            text="Rendimiento",
+            title=f"{selected_area}: ranking de colegios",
+            color_discrete_map={
+                focus_label: theme["secondary"],
+                "Otras sedes": theme["primary"],
+            },
+        )
+        fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
+        fig.update_layout(
+            xaxis_title="",
+            yaxis_title="% de rendimiento",
+            yaxis_range=compute_axis_bounds(rank_plot["Rendimiento"]),
+            showlegend=False,
+        )
+        apply_accessible_figure_style(fig, theme)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        heat_school_grade = build_area_school_grade_heatmap(df_area, selected_area, school_order)
+        if heat_school_grade.empty:
+            st.info("No hay suficiente información para el cruce colegio × grado.")
+        else:
+            fig = px.imshow(
+                heat_school_grade,
+                text_auto=".1f",
+                aspect="auto",
+                title=f"{selected_area}: desempeño por colegio y grado",
+                color_continuous_scale=theme["heat_scale"],
+            )
+            fig.update_layout(
+                xaxis_title="Grado",
+                yaxis_title="Colegio",
+                coloraxis_colorbar_title="%"
+            )
+            apply_accessible_figure_style(fig, theme)
+            st.plotly_chart(fig, use_container_width=True)
+
+    if is_english_prueba(selected_area):
+        st.markdown("**Resumen específico para Inglés**")
+        english_summary = build_english_school_summary(df_area)
+
+        if english_summary.empty:
+            st.warning(
+                "No pude construir el resumen de Inglés. "
+                "Recuerda que esta área en tu app se interpreta por niveles CEFR."
+            )
+        else:
+            st.dataframe(english_summary, use_container_width=True, hide_index=True)
+
+            # Heatmap por colegio y grado también sigue siendo útil en rendimiento bruto
+            grade_table = by_grade.rename(columns={"Rendimiento": "% de rendimiento"})[
+                ["Grado Etiqueta", "% de rendimiento"]
+            ]
+            with st.expander("Ver tabla de grados en Inglés", expanded=False):
+                st.dataframe(grade_table, use_container_width=True, hide_index=True)
+
+    else:
+        st.markdown("**Competencias por colegio**")
+        comp_heat = build_competency_heatmap(df_area, school_order)
+
+        col3, col4 = st.columns([1.2, 1])
+        with col3:
+            if comp_heat.empty:
+                st.info("No hay suficientes datos para el cruce colegio × competencia.")
+            else:
+                fig = px.imshow(
+                    comp_heat,
+                    text_auto=".1f",
+                    aspect="auto",
+                    title=f"{selected_area}: desempeño por colegio y competencia",
+                    color_continuous_scale=theme["heat_scale"],
+                )
+                fig.update_layout(
+                    xaxis_title="Competencia",
+                    yaxis_title="Colegio",
+                    coloraxis_colorbar_title="%"
+                )
+                apply_accessible_figure_style(fig, theme)
+                st.plotly_chart(fig, use_container_width=True)
+
+        with col4:
+            comp_summary = build_school_competency_summary(df_area)
+            if comp_summary.empty:
+                st.info("No hay resumen de competencias disponible.")
+            else:
+                st.dataframe(comp_summary, use_container_width=True, hide_index=True)
+
+    with st.expander("Ver tablas base del área", expanded=False):
+        st.markdown("**Ranking de colegios**")
+        st.dataframe(by_school, use_container_width=True, hide_index=True)
+
+        st.markdown("**Ranking de grados**")
+        st.dataframe(
+            by_grade.rename(columns={"Rendimiento": "% de rendimiento"})[
+                ["Grado Etiqueta", "% de rendimiento"]
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+        
 # =========================
 # ACADÉMICO
 # =========================
@@ -2596,25 +2971,27 @@ def main() -> None:
     tabs = st.tabs([
         "Mapa general de la red",
         "Tablero directivo",
+        "Comparativo por área",
         "Detalle por prueba",
         "Análisis de las respuestas",
         "Análisis de antigüedad del estudiante",
         "Lectura socioemocional",
     ])
-
+    
     with tabs[0]:
         show_network_map_tab(filtered)
     with tabs[1]:
         show_overview_tab(filtered, focus_df, focus_label)
     with tabs[2]:
-        show_pruebas_tab(filtered, focus_df, focus_label)
+        show_area_comparison_tab(filtered, focus_label)
     with tabs[3]:
-        show_psychometrics_tab(filtered, focus_df, focus_label)
+        show_pruebas_tab(filtered, focus_df, focus_label)
     with tabs[4]:
-        show_antiguedad_tab(filtered, focus_df, focus_label)
+        show_psychometrics_tab(filtered, focus_df, focus_label)
     with tabs[5]:
+        show_antiguedad_tab(filtered, focus_df, focus_label)
+    with tabs[6]:
         show_embedded_socioemocional_tab(filtered, focus_label)
-
 
 if __name__ == "__main__":
     main()
